@@ -8,8 +8,7 @@ to post things to places.
 
 ## Requirements
 
-requests
-python-twitter
-atlassian-python-api
-google-api-python-client
-
+- requests
+- python-twitter
+- atlassian-python-api
+- google-api-python-client
