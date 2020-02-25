@@ -12,3 +12,11 @@ to post things to places.
 - python-twitter
 - atlassian-python-api
 - google-api-python-client
+
+## Installation
+
+In the source directory:
+
+```pip install -e .```
+
+and look for any compilation/installation failures for the dependencies.
