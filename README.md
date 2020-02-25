@@ -1,7 +1,7 @@
 # Johnny Five
 
-A friendly bot.  Initially started as a twitter bot, but it might grow
-from there if there's a need into a more multipurpose (Slack? Confluence?) bot
+A friendly bot.  Initially started as a twitter bot, but it has grown to become 
+a general/multipurpose (email, Slack? Confluence?) notification helper library 
 to post things to places.
 
 ![johnnyfive](https://github.com/LowellObservatory/JohnnyFive/blob/master/images/johnnyfive.jpg)
