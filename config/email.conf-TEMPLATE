@@ -1,0 +1,9 @@
+[email]
+host = your.smtp.here
+port = 465
+user = login
+password = password
+fromname = A Fancy Name For Your Login
+toaddr = whoYourSendingTo@domain.tldr
+footer = emailFooter.txt
+enabled = True

@@ -1,0 +1,2 @@
+This footer is appending to each email message you send, and can
+be used to include any standard links and stuff.
