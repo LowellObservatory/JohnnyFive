@@ -1,0 +1,5 @@
+[twitterSetup]
+apiKey = your
+apiSecret = stuff
+tokenKey = goes
+tokenSecret = here

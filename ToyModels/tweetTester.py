@@ -29,7 +29,7 @@ def sendMessage(twit, message):
                       access_token_secret=twit['tokenSecret'])
 
     message = 'Hello world!\n\nhttp://www.mygalaxies.co.uk/txynr4/'
-    media = 'images/helloworld.png'
+    media = '../images/helloworld.png'
 
     try:
         status = api.PostUpdate(message, media=media)
@@ -41,7 +41,7 @@ def sendMessage(twit, message):
 
 
 if __name__ == "__main__":
-    confFile = 'config/johnnyfive.conf'
+    confFile = '../config/johnnyfive.conf'
     conf = ligmos.utils.confparsers.rawParser(confFile)
 
     # Quick and dirty for prototyping, will set up classes later
