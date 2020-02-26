@@ -15,6 +15,7 @@ Further description.
 
 from __future__ import division, print_function, absolute_import
 
+import ssl
 import socket
 import smtplib
 
