@@ -22,8 +22,7 @@ import smtplib
 
 def sendMail(message, smtploc='localhost', port=25, user=None, passw=None):
     """
-    This assumes that the SMTP server has no authentication, and that
-    message is an instance of EmailMessage.
+    This assumes that 'message' is an instance of EmailMessage
     """
     # Ultimate return value to know whether we need to try again later
     success = False
