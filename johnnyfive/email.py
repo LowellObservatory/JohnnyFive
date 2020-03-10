@@ -18,6 +18,7 @@ from __future__ import division, print_function, absolute_import
 import ssl
 import socket
 import smtplib
+from email.message import EmailMessage
 
 
 def sendMail(message, smtploc='localhost', port=25, user=None, passw=None):
@@ -74,3 +75,24 @@ def sendMail(message, smtploc='localhost', port=25, user=None, passw=None):
         print("UNKNOWN SMTP METHOD! NOT SENDING ANY MAIL.")
 
     return success
+
+
+def constructMail(subject, body, fromaddr, toaddr, fromname=None):
+    """
+    """
+    msg = EmailMessage()
+    if fromname is None:
+        msg['From'] = fromaddr
+    else:
+        msg['From'] = "%s via <%s>" % (fromname, fromaddr)
+    msg['To'] = toaddr
+
+    # Make sure replies go to the list, not to this 'from' address
+    msg.add_header('reply-to', toaddr)
+
+    msg['Subject'] = subject
+    msg.set_content(body)
+
+    print(msg)
+
+    return msg
