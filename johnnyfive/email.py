@@ -84,7 +84,7 @@ def constructMail(subject, body, fromaddr, toaddr, fromname=None):
     if fromname is None:
         msg['From'] = fromaddr
     else:
-        msg['From'] = "%s via <%s>" % (fromname, fromaddr)
+        msg['From'] = "%s <%s>" % (fromname, fromaddr)
     msg['To'] = toaddr
 
     # Make sure replies go to the list, not to this 'from' address
