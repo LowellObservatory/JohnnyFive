@@ -69,3 +69,4 @@ target/
 .vscode/
 config/*.conf
 config/*.json
+*.code-workspace
