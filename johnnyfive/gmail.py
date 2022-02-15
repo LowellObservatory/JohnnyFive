@@ -184,7 +184,7 @@ def init_gmail_api():
         The GMail API service object for consumption by other routines
     """
     creds = None
-    if os.path.exists(token_fn := utils.Paths.config.joinpath('token.json')):
+    if os.path.exists(token_fn := utils.Paths.config.joinpath('gmail_token.json')):
         creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
 
     # If there are no (valid) credentials available, lauch browser to log in
@@ -193,7 +193,7 @@ def init_gmail_api():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+                utils.Paths.config.joinpath('gmail_credentials.json'), SCOPES)
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
         with open(token_fn, 'w', encoding='utf-8') as token:

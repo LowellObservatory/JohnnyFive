@@ -24,9 +24,9 @@ from atlassian import Confluence
 from ligmos import utils as lig_utils, workers as lig_workers
 
 # Internal Imports
+from johnnyfive import utils
 
-
-def setup_confluence(conf_name, conf_file):
+def setup_confluence():
     """setup_confluence Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
@@ -34,22 +34,16 @@ def setup_confluence(conf_name, conf_file):
     the Confluence space and page title into which the updated table will be
     placed.
 
-    Parameters
-    ----------
-    conf_name : `str`
-        Name of the table within the configuration file to parse
-    conf_file : `str`
-        Name of the configuration file to parse (with full path)
-
     Returns
     -------
     confluence : `atlassian.Confluence`
         Confluence class, initialized with credentials
     """
     # Read in and parse the configuration file
-    setup = lig_utils.confparsers.rawParser(conf_file)
+    setup = lig_utils.confparsers.rawParser(
+                            utils.Paths.config.joinpath('confluence.conf'))
     setup = lig_workers.confUtils.assignConf(
-                            setup[conf_name],
+                            setup['confluenceSetup'],
                             lig_utils.classes.baseTarget,
                             backfill=True)
 

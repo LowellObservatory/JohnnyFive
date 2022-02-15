@@ -1,0 +1,4 @@
+[confluenceSetup]
+host = confluence
+user = None
+password = None
