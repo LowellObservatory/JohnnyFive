@@ -26,6 +26,83 @@ from ligmos import utils as lig_utils, workers as lig_workers
 # Internal Imports
 from johnnyfive import utils
 
+
+# Set API Components
+__all__ = ['ConfluencePage']
+
+
+class ConfluencePage:
+    """ Class for a single Confluence Page
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    space : `str`
+        The name of the Confluence space for this page
+    title : `str`
+        The page title
+    instance : ``, optional
+        An existing Confluence influence, to be used in the case of many
+        instances of this class used in short order [Default: None]
+    """
+    def __init__(self, space, title, instance=None):
+        self.space = space
+        self.title = title
+        self.instance = setup_confluence() if not \
+                            isinstance(instance, Confluence) else instance
+
+        self.exists = safe_confluence_connect(self.instance.page_exists,
+                                              self.space, self.title)
+
+        # Page-Specific Information
+        self.page_id = None if not self.exists else \
+            safe_confluence_connect(self.instance.get_page_id,
+                                    self.space, self.title)
+        self.attach_url = None if not self.exists else \
+            f"{self.instance.url}download/attachments/{self.page_id}/"
+
+    def delete_attachment(self, filename):
+        """delete_attachment Delete an attachment from this page
+
+        Wrapper for the Confluence method delete_attachment() that includes the
+        page ID of this object and is wrapped in safe_confluence_connect().
+
+        Parameters
+        ----------
+        filename : `str`
+            Filename of the attachment to delete
+        """
+        # Wrap the underlying method with safe_confluence_connect()
+        safe_confluence_connect(self.instance.delete_attachment,
+                                self.page_id, filename)
+
+    def attach_file(self, filename, name=None, content_type=None,
+                    comment=None):
+        """attach_file Attach a file to this page
+
+        Wrapper for the Confluence method attach_file() that includes the
+        page ID of this object and is wrapped in safe_confluence_connect().
+
+        Parameters
+        ----------
+        filename : `str`
+            Filename of the attachment
+        name : `str`, optional
+            Display name for this attachment [Default: None]
+        content_type : `str`, optional
+            MIME content type [Default: None]
+        comment : `str`, optional
+            Additional comment or description to be included [Default: None]
+        """
+        # Wrap the underlying method with safe_confluence_connect()
+        safe_confluence_connect(self.instance.attach_file,
+                                filename, name=name,
+                                content_type=content_type,
+                                page_id=self.page_id, comment=comment)
+
+
+# Internal Functions =========================================================#
 def setup_confluence():
     """setup_confluence Set up the Confluence class instance
 
