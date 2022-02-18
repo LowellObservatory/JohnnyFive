@@ -17,14 +17,10 @@ Slack API Documentation:
 # Built-In Libraries
 import logging
 import os
-from time import sleep
 
 # 3rd Party Libraries
-from slack_sdk import WebClient
+from slack_sdk import WebClient as SlackWebClient
 from slack_sdk.errors import SlackApiError
-
-# Lowell Libraries
-from ligmos import utils as lig_utils, workers as lig_workers
 
 # Internal Imports
 from johnnyfive import utils
@@ -42,17 +38,12 @@ def setup_slack():
     logger : `logging.Logger`
         The logging thingie
     """
-    # Read in and parse the configuration file (LIGMOS)
-    setup = lig_utils.confparsers.rawParser(
-                            utils.Paths.config.joinpath('slack.conf'))
-    setup = lig_workers.confUtils.assignConf(
-                            setup['slackSetup'],
-                            lig_utils.classes.baseTarget,
-                            backfill=True)
+    # Read the setup
+    setup = utils.read_ligmos_conffiles('slackSetup')
 
-    # WebClient instantiates a client that can call API methods
+    # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.
-    client = WebClient(token=setup.password)
+    client = SlackWebClient(token=setup.password)
     logger = logging.getLogger(__name__)
 
     return client, logger
@@ -100,7 +91,19 @@ def read_channels(client, logger):
 
 
 def send_message(client, logger, conversation_id):
+    """send_message _summary_
 
+    _extended_summary_
+
+    Parameters
+    ----------
+    client : _type_
+        _description_
+    logger : _type_
+        _description_
+    conversation_id : _type_
+        _description_
+    """
     # ID of channel you want to post message to
     channel_id = conversation_id
 
@@ -124,7 +127,7 @@ def upload_file():
     _extended_summary_
     """
     slack_token = os.environ["SLACK_BOT_TOKEN"]
-    client = WebClient(token=slack_token)
+    client = SlackWebClient(token=slack_token)
 
     response = client.files_upload(
                             channels="C3UKJTQAC",
@@ -135,6 +138,10 @@ def upload_file():
 
 # Main Testing Driver ========================================================#
 def main():
+    """main Main Testing Driver
+
+    Will be removed before this code goes into production.
+    """
     client, logger = setup_slack()
     print(type(client), type(logger))
     conversation_id = read_channels(client, logger)

@@ -3,3 +3,14 @@ apiKey = your
 apiSecret = stuff
 tokenKey = goes
 tokenSecret = here
+
+[confluenceSetup]
+host = confluence
+user = None
+password = None
+
+[gmailSetup]
+user = email address
+
+[slackSetup]
+password = Bot User OAuth Token

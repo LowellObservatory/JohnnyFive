@@ -20,9 +20,6 @@ from time import sleep
 # 3rd Party Libraries
 from atlassian import Confluence
 
-# Lowell Libraries
-from ligmos import utils as lig_utils, workers as lig_workers
-
 # Internal Imports
 from johnnyfive import utils
 
@@ -32,7 +29,7 @@ __all__ = ['ConfluencePage']
 
 
 class ConfluencePage:
-    """ Class for a single Confluence Page
+    """ConfluencePage Class for a single Confluence Page
 
     _extended_summary_
 
@@ -40,15 +37,15 @@ class ConfluencePage:
     ----------
     space : `str`
         The name of the Confluence space for this page
-    title : `str`
+    page_title : `str`
         The page title
     instance : ``, optional
         An existing Confluence influence, to be used in the case of many
         instances of this class used in short order [Default: None]
     """
-    def __init__(self, space, title, instance=None):
+    def __init__(self, space, page_title, instance=None):
         self.space = space
-        self.title = title
+        self.title = page_title
         self.instance = setup_confluence() if not \
                             isinstance(instance, Confluence) else instance
 
@@ -116,15 +113,10 @@ def setup_confluence():
     confluence : `atlassian.Confluence`
         Confluence class, initialized with credentials
     """
-    # Read in and parse the configuration file
-    setup = lig_utils.confparsers.rawParser(
-                            utils.Paths.config.joinpath('confluence.conf'))
-    setup = lig_workers.confUtils.assignConf(
-                            setup['confluenceSetup'],
-                            lig_utils.classes.baseTarget,
-                            backfill=True)
+    # Read the setup
+    setup = utils.read_ligmos_conffiles('confluenceSetup')
 
-    # Return
+    # Return the Confluence instance
     return Confluence( url=setup.host,
                        username=setup.user,
                        password=setup.password )

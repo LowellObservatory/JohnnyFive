@@ -23,6 +23,9 @@ This module primarily trades in... utility?
 # 3rd Party Libraries
 from importlib_resources import files as pkg_files
 
+# Lowell Libraries
+from ligmos import utils as lig_utils, workers as lig_workers
+
 # Internal Imports
 
 
@@ -34,3 +37,31 @@ class Paths:
     """
     # Main data & config directories
     config = pkg_files('JohnnyFive.config')
+
+
+def read_ligmos_conffiles(confname, conffile='johnnyfive.conf'):
+    """read_ligmos_conffiles Read a configuration file using LIGMOS
+
+    Having this as a separate function may be a bit of an overkill, but it
+    makes it easier to keep the ligmos imports only in one place, and
+    simplifies the code elsewhere.
+
+    Parameters
+    ----------
+    confname : `str`
+        Name of the table within the configuration file to parse
+    conffile : `str`
+        Name of the configuration file to parse
+
+    Returns
+    -------
+    `ligmos.utils.classes.baseTarget`
+        An object with arrtibutes matching the keys in the associated
+        configuration file.
+    """
+    ligconf = lig_utils.confparsers.rawParser(Paths.config.joinpath(conffile))
+    ligconf = lig_workers.confUtils.assignConf(
+                            ligconf[confname],
+                            lig_utils.classes.baseTarget,
+                            backfill=True)
+    return ligconf
