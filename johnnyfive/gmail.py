@@ -8,18 +8,22 @@
 #
 #  @author: tbowers
 
-"""GMail Communication module
+"""Gmail Communication module
 
 Further description.
+
+Gmail API Documentation:
+        https://developers.google.com/gmail/api/reference/rest/v1/
 """
 
 # Built-In Libraries
-from base64 import urlsafe_b64encode
+import base64
 from email.mime import audio, base, image, multipart, text
 import mimetypes
 import os
 
-# Google API
+# 3rd Party Libraries
+from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -35,7 +39,7 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 
 # Set API Components
-__all__ = ['GmailMessage']
+__all__ = ['GmailMessage', 'GetMessages']
 
 
 class GmailMessage():
@@ -123,7 +127,7 @@ class GmailMessage():
             The sent message object
         """
         # Take the message object, and 64-bit encode it properly for sending
-        encoded_message = urlsafe_b64encode(self.message.as_bytes())
+        encoded_message = base64.urlsafe_b64encode(self.message.as_bytes())
         # The sendable message is a dictionary containing the raw decoded thing
         sendable_message = {'raw': encoded_message.decode()}
 
@@ -132,7 +136,7 @@ class GmailMessage():
         while not self.service:
             self.service = setup_gmail()
 
-        # Try to send the message using the API, else print an error message
+        # Try to send the message (API: users.messages.send)
         try:
             message = self.service.users().messages().send(userId="me",
                                             body=sendable_message).execute()
@@ -141,6 +145,140 @@ class GmailMessage():
         except HttpError as error:
             print(f"An error occurred: {error}")
             return None
+
+
+class GetMessages():
+    """GetMessages Get Gmail messages corresponding to given criteria
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    label : `str`, optional
+        The Gmail label of messages to find [Default: None]
+    after : `str`, optional
+        Date after which to search for messages. Must be in YYYY/MM/DD format.
+        [Default: None]
+    before : `str`, optional
+        Date before which to search for messages. Must be in YYYY/MM/DD format.
+        [Default: None] 
+    """
+    def __init__(self, label=None, after=None, before=None):
+        # Initialize the Gmail connection
+        self.service = setup_gmail()
+        self.label_id = self._lableId_from_labelName(label)
+        self.query = self._build_query(after, before)
+
+        # Get the list of matching messages (API: users.messages.list)
+        self.message_list = self.service.users().messages().list(userId='me',
+                    labelIds=[self.label_id], q=self.query,
+                    maxResults=500).execute().get('messages', [])
+
+    def render_message(self, message_id):
+        """render_message Retrieve and render a message by ID#
+
+        Gmail mnessages are stored in a JSON-like structure that must be
+        parsed out to get the tasty nougat center.
+
+        Parameters
+        ----------
+        message_id : `str`
+            The ['id'] field of an entry in self.message_list
+
+        Returns
+        -------
+        `dict`
+            Dictionary containing the subject, sender, date, and body of
+            the message.
+        """
+        try:
+            # Get the message, then start parsing (API: users.messages.get)
+            results = self.service.users().messages().get(userId='me',
+                                                id=message_id).execute()
+            payload = results['payload']
+            headers = payload['headers']
+
+            # Look for Subject and Sender Email in the headers
+            for d in headers:
+                if d['name'] == 'Subject':
+                    subject = d['value']
+                if d['name'] == 'From':
+                    sender = d['value']
+                if d['name'] == 'Date':
+                    date = d['value']
+
+            # The Body of the message is in Encrypted format -- decode it.
+            #  Get the data and decode it with base 64 decoder.
+            data = payload['body']['data']
+            data = data.replace("-","+").replace("_","/")
+            decoded_data = base64.b64decode(data)
+
+            # `decoded_data` is in lxml format; parse with BeautifulSoup
+            body = BeautifulSoup(decoded_data , "lxml").body()
+            body = body[0].text
+
+        # TODO: Actually deal with this exception properly.
+        except Exception as e:
+            print('Gack.')
+            raise e
+
+        return dict(subject=subject, sender=sender, date=date, body=body)
+
+    def _lableId_from_labelName(self, name):
+        """_lableId_from_labelName Get the Label ID from the Label Name
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        name : `str`
+            Label name
+
+        Returns
+        -------
+        `str`
+            Label ID
+        """
+        # Get the list of labels for the "me" account (API: users.labels.list)
+        results = self.service.users().labels().list(userId='me').execute()
+        labels = results.get('labels', [])
+
+        # If there are no labels, return None
+        if not labels:
+            print('Whoops, no labels found.')
+            return None
+
+        label_id = None
+        # Go through the labels, and return the ID matching the name
+        for label in labels:
+            if label['name'] == name:
+                label_id = label['id']
+
+        return label_id
+
+    def _build_query(self, after_date, before_date):
+        """_build_query Build the query string for users.messages.list
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        after_date : `str`
+            Date after which to search for messages.
+        before_date : `str`
+            Date before which to search for messages.
+
+        Returns
+        -------
+        `str`
+            The appropriate query string
+        """
+        q = ''
+        if after_date:
+            q = q + f" after:{after_date}"
+        if before_date:
+            q = q + f" before:{before_date}"
+        return q
 
 
 # Newer OAUTH Routines =======================================================#
