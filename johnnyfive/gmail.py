@@ -4,9 +4,9 @@
 #  License, v. 2.0. If a copy of the MPL was not distributed with this
 #  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-#  Created on 25 Feb 2020
+#  Created on 15 Feb 2022
 #
-#  @author: rhamilton, tbowers
+#  @author: tbowers
 
 """GMail Communication module
 
@@ -45,8 +45,8 @@ class GmailMessage():
 
         Parameters
     ----------
-    toaddr : `str`
-        The intended recipient of the email message
+    toaddr : `str` or `list`
+        The intended recipient(s) of the email message
     subject : `str`
         The subject of the email message
     message_text : `str`
@@ -67,7 +67,7 @@ class GmailMessage():
 
         # Build the container for a multipart MIME message
         self.message = multipart.MIMEMultipart()
-        self.message['to'] = toaddr
+        self.message['to'] = toaddr if isinstance(toaddr, str) else ','.join(toaddr)
         self.message['from'] = f"{fromname} <{fromaddr}>" if fromname else fromaddr
         self.message['subject'] = subject
 
@@ -130,7 +130,7 @@ class GmailMessage():
         # Go into a possibly infinite loop!
         # TODO: Make this NOT an infinite loop
         while not self.service:
-            self.reconnect_with_gmail()
+            self.service = setup_gmail()
 
         # Try to send the message using the API, else print an error message
         try:
@@ -141,14 +141,6 @@ class GmailMessage():
         except HttpError as error:
             print(f"An error occurred: {error}")
             return None
-
-    def reconnect_with_gmail(self):
-        """reconnect_with_gmail _summary_
-
-        _extended_summary_
-        """
-        # Re-initialize the Gmail connection
-        self.service = setup_gmail()
 
 
 # Newer OAUTH Routines =======================================================#
@@ -199,10 +191,11 @@ def main():
     Will be removed before this code goes into production.
     """
 
-    recipient = 'tbowers@lowell.edu'
+    recipient = 'someone@domain.com'
     test_message = GmailMessage(recipient,
                                 'This is only a test',
-                                'Test, test, test...  Please disregard.')
+                                'This is an example of sending an attachment with '
+                                'the new GmailMessage class.\n')
 
     test_message.add_attachment(os.path.join('images','johnnyfive.jpg'))
 

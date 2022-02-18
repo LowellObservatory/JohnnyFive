@@ -12,6 +12,9 @@
 
 Slack API Documentation:
         https://slack.dev/python-slack-sdk/
+
+TODO: Properly deal with possible error states (try/except blocks)
+
 """
 
 # Built-In Libraries
@@ -26,6 +29,117 @@ from slack_sdk.errors import SlackApiError
 from johnnyfive import utils
 
 
+# Set API Components
+__all__ = ['SlackChannel']
+
+
+class SlackChannel():
+    """SlackChannel _summary_
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    channel_name : `str`
+        Slack Channel into which to post
+    """
+    def __init__(self, channel_name):
+        self.client, _ = setup_slack()
+
+        # Get the channel ID
+        self.channel_id = self._read_channels(channel_name)
+
+    def send_message(self, message):
+        """send_message Send a (text only) message to the channel
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        message : `str` or `blocks[]` array
+            The message to send to the Slack channel
+
+        Returns
+        -------
+        `Any`
+            The response from Slack
+        """
+        response = None
+        try:
+            # Call the conversations.list method using the WebClient
+            response = self.client.chat_postMessage(
+                                    channel=self.channel_id,
+                                    text=message
+                # You could also use a blocks[] array to send richer content
+            )
+            # Print result, which includes information about the message (like TS)
+            #print(result)
+        except SlackApiError as e:
+            print(f"Error: {e}")
+        return response
+
+    def upload_file(self, file, title=None):
+        """upload_file Upload a file to the channel
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        file : `str` or `os.PathLike`
+            The (path and) filename of the file to be uploaded.
+        title : `str`, optional
+            The title for the file posted [Default: None]
+
+        Returns
+        -------
+        `Any`
+            The response from Slack
+        """
+        response = None
+        try:
+            response = self.client.files_upload(
+                                    channels=self.channel_id,
+                                    file=file,
+                                    title=title)
+        except SlackApiError as e:
+            print(f"Error: {e}")
+        return response
+
+    def _read_channels(self, name):
+        """_read_channels Return the Channel ID for the names channel
+
+        Parameters
+        ----------
+        name : `str`
+            The name of the channel
+
+        Returns
+        -------
+        `str`
+            The desired Channel ID
+        """
+        conversation_id = None
+
+        try:
+            # Call the conversations.list() method using the WebClient
+            for _ in (result := self.client.conversations_list()):
+                if conversation_id is not None:
+                    break
+                for channel in result["channels"]:
+                    if channel["name"] == name:
+                        conversation_id = channel["id"]
+                        #Print result
+                        print(f"Found conversation ID: {conversation_id}")
+                        break
+
+        except SlackApiError as e:
+            print(f"Error: {e}")
+
+        # Return the conversation ID
+        return conversation_id
+
+
+# Internal Functions =========================================================#
 def setup_slack():
     """setup_slack Setup the Slack WebClient for posting
 
@@ -49,105 +163,17 @@ def setup_slack():
     return client, logger
 
 
-def read_channels(client, logger):
-    """read_channels Read the Channels in this Slack Workspace
-
-    _extended_summary_
-
-    Parameters
-    ----------
-    client : `slack_sdk.web.client.WebClient`
-        The WebClient object needed for reading and writing
-    logger : `logging.Logger`
-        The logging thingie
-
-    Returns
-    -------
-    `str`
-        The conversation ID matching the channel of interest
-    """
-    # Set up some things
-    channel_name = "bot_test"
-    conversation_id = None
-
-    # Try something
-    try:
-        # Call the conversations.list method using the WebClient
-        for response in (result := client.conversations_list()):
-            if conversation_id is not None:
-                break
-            for channel in result["channels"]:
-                if channel["name"] == channel_name:
-                    conversation_id = channel["id"]
-                    #Print result
-                    print(f"Found conversation ID: {conversation_id}")
-                    break
-
-    except SlackApiError as e:
-        print(f"Error: {e}")
-
-    # Return the conversation ID
-    return conversation_id
-
-
-def send_message(client, logger, conversation_id):
-    """send_message _summary_
-
-    _extended_summary_
-
-    Parameters
-    ----------
-    client : _type_
-        _description_
-    logger : _type_
-        _description_
-    conversation_id : _type_
-        _description_
-    """
-    # ID of channel you want to post message to
-    channel_id = conversation_id
-
-    try:
-        # Call the conversations.list method using the WebClient
-        result = client.chat_postMessage(
-            channel=channel_id,
-            text="Now, I'm just cleaning up the code."
-            # You could also use a blocks[] array to send richer content
-        )
-        # Print result, which includes information about the message (like TS)
-        #print(result)
-
-    except SlackApiError as e:
-        print(f"Error: {e}")
-
-
-def upload_file():
-    """upload_file Upload a file to the conversation
-
-    _extended_summary_
-    """
-    slack_token = os.environ["SLACK_BOT_TOKEN"]
-    client = SlackWebClient(token=slack_token)
-
-    response = client.files_upload(
-                            channels="C3UKJTQAC",
-                            file="files.pdf",
-                            title="Test upload"
-                        )
-
-
 # Main Testing Driver ========================================================#
 def main():
     """main Main Testing Driver
 
     Will be removed before this code goes into production.
     """
-    client, logger = setup_slack()
-    print(type(client), type(logger))
-    conversation_id = read_channels(client, logger)
-    print(type(conversation_id))
-    send_message(client, logger, conversation_id)
-
+    slack_object = SlackChannel('bot_test')
+    slack_object.send_message('I am testing sending a message with my '
+                              'shiny new SlackChannel class.')
+    slack_object.upload_file(os.path.join('images','johnnyfive.jpg'),
+                             title='Self-Portrait')
 
 if __name__ == '__main__':
     main()
