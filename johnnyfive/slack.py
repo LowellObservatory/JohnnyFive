@@ -26,7 +26,7 @@ from slack_sdk import WebClient as SlackWebClient
 from slack_sdk.errors import SlackApiError
 
 # Internal Imports
-from johnnyfive import utils
+from . import utils
 
 
 # Set API Components

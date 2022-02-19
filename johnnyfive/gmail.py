@@ -31,7 +31,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
 # Internal Imports
-from johnnyfive import utils
+from . import utils
 
 
 # This scope is for sending email using the OAuth2 library
@@ -85,8 +85,8 @@ class GmailMessage():
 
         Parameters
         ----------
-        file : _type_
-            _description_
+        file : `str`
+            Filename of the attachment
         """
         # For the attachment, guess the MIME type for reading it in
         content_type, encoding = mimetypes.guess_type(file)
@@ -95,7 +95,7 @@ class GmailMessage():
         if content_type is None or encoding is not None:
             content_type = 'application/octet-stream'
 
-        # Case out content type
+        # Case out the content type
         main_type, sub_type = content_type.split('/', 1)
         if main_type == 'text':
             with open(file, 'rb') as fp:
@@ -140,7 +140,7 @@ class GmailMessage():
         try:
             message = self.service.users().messages().send(userId="me",
                                             body=sendable_message).execute()
-            print(f"Message Id: {message['id']}")
+            #print(f"Message Id: {message['id']}")
             return message
         except HttpError as error:
             print(f"An error occurred: {error}")
@@ -164,10 +164,13 @@ class GetMessages():
         [Default: None] 
     """
     def __init__(self, label=None, after=None, before=None):
+       # Initialize basic stuff
+        self.label_list = None
+
         # Initialize the Gmail connection
         self.service = setup_gmail()
         self.label_id = self._lableId_from_labelName(label)
-        self.query = self._build_query(after, before)
+        self.query = self._build_query(after_date=after, before_date=before)
 
         # Get the list of matching messages (API: users.messages.list)
         self.message_list = self.service.users().messages().list(userId='me',
@@ -224,39 +227,53 @@ class GetMessages():
 
         return dict(subject=subject, sender=sender, date=date, body=body)
 
-    def _lableId_from_labelName(self, name):
-        """_lableId_from_labelName Get the Label ID from the Label Name
+    def update_msg_labels(self, message_id, add_labels=[], remove_labels=[]):
+        """update_msg_labels Update the labels for a message by ID#
 
         _extended_summary_
 
         Parameters
         ----------
-        name : `str`
-            Label name
+        message_id : `str`
+            The ['id'] field of an entry in self.message_list
+        add_labels : `list`, optional
+            The list of label IDs to add to this message [Default: []]
+        remove_labels : `list`, optional
+            The list of label IDs to remove from this message [Default: []]
 
         Returns
         -------
-        `str`
-            Label ID
+        `Any`
+            Uh, the Message object from Gmail... probably just return nothing?
         """
-        # Get the list of labels for the "me" account (API: users.labels.list)
-        results = self.service.users().labels().list(userId='me').execute()
-        labels = results.get('labels', [])
+        if not add_labels and not remove_labels:
+            print("No labels to change.")
+            return
 
-        # If there are no labels, return None
-        if not labels:
-            print('Whoops, no labels found.')
-            return None
+        # Convert Label Names to Label IDs
+        add_label_ids, remove_label_ids = [], []
+        for label in add_labels:
+            add_label_ids.append(self._lableId_from_labelName(label))
+        for label in remove_labels:
+            remove_label_ids.append(self._lableId_from_labelName(label))
 
-        label_id = None
-        # Go through the labels, and return the ID matching the name
-        for label in labels:
-            if label['name'] == name:
-                label_id = label['id']
+        # Build the label dictionary to send to Gmail
+        body = {}
+        if add_label_ids:
+            body['addLabelIds'] = add_label_ids
+        if remove_label_ids:
+            body['removeLabelIds'] = remove_label_ids
 
-        return label_id
+        try:
+            # Modify message lables (API: users.messages.modify)
+            return self.service.users().messages().modify(userId='me',
+                                            id=message_id, body=body).execute()
+        # TODO: Actually deal with this exception properly.
+        except Exception as e:
+            print('Gack.')
+            raise e
 
-    def _build_query(self, after_date, before_date):
+    def _build_query(self, after_date=None, before_date=None):
         """_build_query Build the query string for users.messages.list
 
         _extended_summary_
@@ -279,6 +296,40 @@ class GetMessages():
         if before_date:
             q = q + f" before:{before_date}"
         return q
+
+    def _lableId_from_labelName(self, name):
+        """_lableId_from_labelName Get the Label ID from the Label Name
+
+        _extended_summary_
+
+        Parameters
+        ----------
+        name : `str`
+            Label name
+
+        Returns
+        -------
+        `str`
+            Label ID
+        """
+        # Only do this once
+        if not self.label_list:
+            # Get the list of labels for the "me" account (API: users.labels.list)
+            results = self.service.users().labels().list(userId='me').execute()
+            self.label_list = results.get('labels', [])
+
+        # If there are no labels, return None
+        if not self.label_list:
+            print('Whoops, no labels found.')
+            return None
+
+        label_id = None
+        # Go through the labels, and return the ID matching the name
+        for label in self.label_list:
+            if label['name'] == name:
+                label_id = label['id']
+
+        return label_id
 
 
 # Newer OAUTH Routines =======================================================#
