@@ -161,7 +161,7 @@ class GetMessages():
         [Default: None]
     before : `str`, optional
         Date before which to search for messages. Must be in YYYY/MM/DD format.
-        [Default: None] 
+        [Default: None]
     """
     def __init__(self, label=None, after=None, before=None):
        # Initialize basic stuff
@@ -170,12 +170,13 @@ class GetMessages():
         # Initialize the Gmail connection
         self.service = setup_gmail()
         self.label_id = self._lableId_from_labelName(label)
-        self.query = self._build_query(after_date=after, before_date=before)
+        self.query = build_query(after_date=after, before_date=before)
 
         # Get the list of matching messages (API: users.messages.list)
-        self.message_list = self.service.users().messages().list(userId='me',
-                    labelIds=[self.label_id], q=self.query,
-                    maxResults=500).execute().get('messages', [])
+        results = self.service.users().messages().list(userId='me',
+                                    labelIds=[self.label_id], q=self.query,
+                                    maxResults=500).execute()
+        self.message_list = results.get('messages', [])
 
     def render_message(self, message_id):
         """render_message Retrieve and render a message by ID#
@@ -197,7 +198,7 @@ class GetMessages():
         try:
             # Get the message, then start parsing (API: users.messages.get)
             results = self.service.users().messages().get(userId='me',
-                                                id=message_id).execute()
+                                            id=message_id).execute()
             payload = results['payload']
             headers = payload['headers']
 
@@ -225,9 +226,10 @@ class GetMessages():
             print('Gack.')
             raise e
 
+        # Return a dictionary with the plain-text components of this message
         return dict(subject=subject, sender=sender, date=date, body=body)
 
-    def update_msg_labels(self, message_id, add_labels=[], remove_labels=[]):
+    def update_msg_labels(self, message_id, add_labels=None, remove_labels=None):
         """update_msg_labels Update the labels for a message by ID#
 
         _extended_summary_
@@ -237,9 +239,9 @@ class GetMessages():
         message_id : `str`
             The ['id'] field of an entry in self.message_list
         add_labels : `list`, optional
-            The list of label IDs to add to this message [Default: []]
+            The list of label IDs to add to this message [Default: None]
         remove_labels : `list`, optional
-            The list of label IDs to remove from this message [Default: []]
+            The list of label IDs to remove from this message [Default: None]
 
         Returns
         -------
@@ -248,14 +250,16 @@ class GetMessages():
         """
         if not add_labels and not remove_labels:
             print("No labels to change.")
-            return
+            return None
 
         # Convert Label Names to Label IDs
         add_label_ids, remove_label_ids = [], []
-        for label in add_labels:
-            add_label_ids.append(self._lableId_from_labelName(label))
-        for label in remove_labels:
-            remove_label_ids.append(self._lableId_from_labelName(label))
+        if add_labels:
+            for label in add_labels:
+                add_label_ids.append(self._lableId_from_labelName(label))
+        if remove_labels:
+            for label in remove_labels:
+                remove_label_ids.append(self._lableId_from_labelName(label))
 
         # Build the label dictionary to send to Gmail
         body = {}
@@ -272,30 +276,6 @@ class GetMessages():
         except Exception as e:
             print('Gack.')
             raise e
-
-    def _build_query(self, after_date=None, before_date=None):
-        """_build_query Build the query string for users.messages.list
-
-        _extended_summary_
-
-        Parameters
-        ----------
-        after_date : `str`
-            Date after which to search for messages.
-        before_date : `str`
-            Date before which to search for messages.
-
-        Returns
-        -------
-        `str`
-            The appropriate query string
-        """
-        q = ''
-        if after_date:
-            q = q + f" after:{after_date}"
-        if before_date:
-            q = q + f" before:{before_date}"
-        return q
 
     def _lableId_from_labelName(self, name):
         """_lableId_from_labelName Get the Label ID from the Label Name
@@ -371,6 +351,32 @@ def setup_gmail():
         # TODO(developer) - Handle errors from gmail API.
         print(f'An error occurred: {error}')
         return None
+
+
+# Utility Functions ==========================================================#
+def build_query(after_date=None, before_date=None):
+    """build_query Build the query string for users.messages.list
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    after_date : `str`
+        Date after which to search for messages.
+    before_date : `str`
+        Date before which to search for messages.
+
+    Returns
+    -------
+    `str`
+        The appropriate query string
+    """
+    q = ''
+    if after_date:
+        q = q + f" after:{after_date}"
+    if before_date:
+        q = q + f" before:{before_date}"
+    return q
 
 
 # Testing Driver =============================================================#

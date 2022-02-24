@@ -122,7 +122,7 @@ class ConfluencePage:
             print("Can't create a page that already exists!")
             return
 
-        safe_confluence_connect(self.instance.create_page, self.space, 
+        safe_confluence_connect(self.instance.create_page, self.space,
                                 self.title, page_body, parent_id=parent_id,
                                 representation='wiki', editor='v1')
         # Set the instance metadata (exists, page_id, etc.)
