@@ -65,3 +65,35 @@ def read_ligmos_conffiles(confname, conffile='johnnyfive.conf'):
                             lig_utils.classes.baseTarget,
                             backfill=True)
     return ligconf
+
+
+def print_dict(dd, indent=0, di=4):
+    """print_dict Print a dictionary in tree format
+
+    You know how sometimes you get these nested dictionaries, and they're a
+    pain to visually parse?  This routine prints out the contents of a
+    dictionary in tree format to make it easier to see which fields are
+    contained in others, etc.
+
+    NOTE: Currently, dictionary keys are limited to length 12 `str`
+
+    Parameters
+    ----------
+    dd : `dict`
+        The dictionary to print
+    indent : `int`, optional
+        The initial indentation for the tree [Default: 0]
+    di: `int`, optional
+        The incremental indentation for each layer of the tree [Default: 4]
+    """
+    if not isinstance(dd, dict):
+        print("Input not a dictionary.")
+        return
+
+    for key,value in dd.items():
+        # Recursive for nested dictionaries
+        if isinstance(value, dict):
+            print(f"{' '*indent}{key:12s}:")
+            print_dict(value, indent+di)
+        else:
+            print(f"{' '*indent}{key:12s}: {value}")
