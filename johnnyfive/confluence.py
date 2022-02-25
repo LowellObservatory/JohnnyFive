@@ -21,7 +21,7 @@ from time import sleep
 from atlassian import Confluence
 
 # Internal Imports
-from johnnyfive import utils
+from . import utils
 
 
 # Set API Components

@@ -23,7 +23,7 @@ def main(interactive=False):
 
     test_message.add_attachment(utils.Paths.images.joinpath('johnnyfive.jpg'))
 
-    send_reciept  = test_message.send()
+    send_reciept = test_message.send()
 
     print(type(send_reciept))
     print(send_reciept)
