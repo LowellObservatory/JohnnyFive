@@ -95,7 +95,6 @@ class SlackChannel():
             The response from Slack
         """
         response = None
-        print(f"Inside... file = {file}")
         try:
             response = self.client.files_upload(
                                    channels=self.channel_id,

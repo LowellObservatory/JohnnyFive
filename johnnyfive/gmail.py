@@ -61,13 +61,14 @@ class GmailMessage():
     fromaddr : `str`, optional
         Sender email address [Default: Value from [gmailSetup]]
     """
-    def __init__(self, toaddr, subject, message_text, fromname=None, fromaddr=None):
+    def __init__(self, toaddr, subject, message_text, fromname=None,
+                 fromaddr=None, interactive=False):
         # Load default `fromaddr`` if None passed in
         if not fromaddr:
             fromaddr = utils.read_ligmos_conffiles('gmailSetup').user
 
         # Initialize the Gmail connection
-        self.service = setup_gmail()
+        self.service = setup_gmail(interactive=interactive)
 
         # Build the container for a multipart MIME message
         self.message = multipart.MIMEMultipart()
@@ -337,14 +338,24 @@ def setup_gmail(interactive=False):
             token_fn := utils.Paths.config.joinpath('gmail_token.json') ):
         creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
 
-    # If there are no (valid) credentials available, lauch browser to log in
+    # If there are no (valid) credentials available...
     if not creds or not creds.valid:
+
+        # If just expired, refresh and move on
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
+
+        # If running in `interactive`, lauch browser to log in
+        elif interactive:
             flow = InstalledAppFlow.from_client_secrets_file(
                 utils.Paths.config.joinpath('gmail_credentials.json'), SCOPES)
             creds = flow.run_local_server(port=0)
+
+        # Otherwise, raise an exception and specify to run interactively
+        else:
+            raise ValueError("To authenticate user, run (NOT in a container):\n"
+                             "python examples/gmail_example.py -i")
+
         # Save the credentials for the next run
         with open(token_fn, 'w', encoding='utf-8') as token:
             token.write(creds.to_json())
