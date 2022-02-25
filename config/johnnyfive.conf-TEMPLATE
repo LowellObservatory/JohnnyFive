@@ -8,6 +8,10 @@ tokenSecret = here
 host = confluence
 user = None
 password = None
+access_token = None
+access_token_secret = None
+consumer_key = None
+key_cert = None
 
 [gmailSetup]
 user = email address

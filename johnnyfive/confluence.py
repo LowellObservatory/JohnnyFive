@@ -21,7 +21,7 @@ from time import sleep
 from atlassian import Confluence
 
 # Internal Imports
-from . import utils
+from johnnyfive import utils
 
 
 # Set API Components
@@ -48,7 +48,10 @@ class ConfluencePage:
         self.title = page_title
         self.instance = setup_confluence() if not \
                             isinstance(instance, Confluence) else instance
-        # Set the class metadata
+        self.uname = self.instance.username
+        self.space_perms = self._set_permdict()
+
+        # Set the class metadata based on this page
         self._set_metadata()
 
     def add_comment(self, comment):
@@ -63,6 +66,10 @@ class ConfluencePage:
         comment : `str`
             The comment to be left on the page.
         """
+        if not self.space_perms['COMMENT']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  f" to comment in space {self.space}.")
+
         safe_confluence_connect(self.instance.add_comment,
                                 self.page_id, comment)
 
@@ -77,6 +84,10 @@ class ConfluencePage:
         label : `str`
             The label to be added to the page
         """
+        if not self.space_perms['EDITSPACE']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  f" to add a label in space {self.space}.")
+
         safe_confluence_connect(self.instance.set_page_label,
                                 self.page_id, label)
 
@@ -98,7 +109,11 @@ class ConfluencePage:
         comment : `str`, optional
             Additional comment or description to be included [Default: None]
         """
-        # Wrap the underlying method with safe_confluence_connect()
+        if not self.space_perms['CREATEATTACHMENT']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  " to create an attachment in space "
+                                  f"{self.space}.")
+
         safe_confluence_connect(self.instance.attach_file,
                                 filename, name=name,
                                 content_type=content_type,
@@ -117,6 +132,10 @@ class ConfluencePage:
             The parent page to place this under.  If none given, the new page
             will be created at the root of `self.space`. [Default: None]
         """
+        if not self.space_perms['EDITSPACE']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  f" to create a page in space {self.space}.")
+
         # Check if it exists before we try anything
         if self.exists:
             print("Can't create a page that already exists!")
@@ -139,7 +158,11 @@ class ConfluencePage:
         filename : `str`
             Filename of the attachment to delete
         """
-        # Wrap the underlying method with safe_confluence_connect()
+        if not self.space_perms['REMOVEATTACHMENT']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  " to remove an attachment in space "
+                                  f"{self.space}.")
+
         safe_confluence_connect(self.instance.delete_attachment,
                                 self.page_id, filename)
 
@@ -166,6 +189,10 @@ class ConfluencePage:
         Remove the Confluence page and update the instance metadata to reflect
         the new state.
         """
+        if not self.space_perms['REMOVEPAGE']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  f" to remove a page in space {self.space}.")
+
         safe_confluence_connect(self.instance.remove_page, self.page_id)
         self._set_metadata()
 
@@ -186,6 +213,10 @@ class ConfluencePage:
         _type_
             _description_
         """
+        if not self.space_perms['EDITSPACE']:
+            raise PermissionError(f"User {self.uname} does not have permission"
+                                  f" to update a page in space {self.space}.")
+
         safe_confluence_connect(self.instance.update_page, self.page_id,
                                 self.title, body)
 
@@ -205,15 +236,46 @@ class ConfluencePage:
         self.attachment_url = None if not self.exists else \
             f"{self.instance.url}download/attachments/{self.page_id}/"
 
+    def _set_permdict(self):
+        """_set_permdict Create a dictionary of permissions
+
+        This method creates a dictionary of permissions for this user in this
+        space.  Each item in the dictionary is boolean based on the results of
+        the method confluence.get_space_permissions().
+
+        Returns
+        -------
+        `dict`
+            The dictionary of permissions (boolean)
+        """
+        perms = safe_confluence_connect(self.instance.get_space_permissions,
+                                        self.space)
+
+        perm_dict = {}
+        for perm in perms:
+            # Set this permission as false... will update to True if needed
+            perm_dict[perm['type']] = False
+            for space_perm in perm['spacePermissions']:
+                if space_perm['userName'] == self.uname:
+                    perm_dict[perm['type']] = True
+
+        return perm_dict
+
 
 # Internal Functions =========================================================#
-def setup_confluence():
+def setup_confluence(use_oauth=False):
     """setup_confluence Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
-    username, and password.  Also contained in the configuration file are
-    the Confluence space and page title into which the updated table will be
-    placed.
+    username, and password (and/or OAUTH info).
+
+    NOTE: For Confluence install version >= 7.9, can use OAUTH for
+          authentication instead of username/password.
+
+    Parameters
+    ----------
+    use_oauth : `bool`, optional
+        Use the OAUTH authentication scheme?  [Default: False]
 
     Returns
     -------
@@ -223,20 +285,28 @@ def setup_confluence():
     # Read the setup
     setup = utils.read_ligmos_conffiles('confluenceSetup')
 
-    # Return the Confluence instance
+    # If we are using OAUTH, instantiate a Confluence object with it
+    if use_oauth:
+        oauth_dict = {'access_token': setup.access_token,
+                      'access_token_secret': setup.access_token_secret,
+                      'consumer_key': setup.consumer_key,
+                      'key_cert': setup.key_cert}
+        return Confluence(url=setup.host, oauth=oauth_dict)
+
+    # Else, return a Confluence object instantiated with username/password
     return Confluence( url=setup.host,
                        username=setup.user,
                        password=setup.password )
 
 
-def safe_confluence_connect(func, *args, pause=5, timeout=5, **kwargs):
+def safe_confluence_connect(func, *args, pause=5, nretries=20, **kwargs):
     """safe_confluence_connect Safely connect to Confluence (error-catching)
 
     Wrapper for confluence-connection functions to catch errors that might be
     kicked (ConnectionTimeout, for instance).
 
-    This function performs a semi-infinite loop, pausing for 5 seconds after
-    each failed function call, up to a maximum of 5 minutes.
+    This function performs a semi-infinite loop, pausing for `5` seconds after
+    each failed function call, up to a maximum of `20` retries.
 
     Parameters
     ----------
@@ -245,19 +315,16 @@ def safe_confluence_connect(func, *args, pause=5, timeout=5, **kwargs):
     pause : `int` or `float`, optional
         The number of seconds to wait in between retries to connect.
         [Default: 5]
-    timeout : `int` or `float`, optional
-        The total time (in minutes) to continue retrying before returning None
-        [Default: 5]
+    nretries : `int`, optional
+        The total number of times to retry connecting before returning None
+        [Default: 20]
 
     Returns
     -------
     `Any`
         The return value of `func` -- or None if unable to run `func`
     """
-    # Starting value
-    i = 1
-
-    while True:
+    for i in range(1,nretries+1):
         try:
             # Nominal function return
             return func(*args, **kwargs)
@@ -268,7 +335,5 @@ def safe_confluence_connect(func, *args, pause=5, timeout=5, **kwargs):
                   f"{exception.__context__}  or {exception}\nWaiting {pause} "
                   f"seconds before starting attempt #{(i := i+1)}")
             sleep(pause)
-        # Give up after `timeout` minutes...
-        if i >= int(timeout*60/pause):
-            break
+    # Give up after `nretries`...
     return None

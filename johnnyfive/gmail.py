@@ -313,13 +313,19 @@ class GetMessages():
 
 
 # Newer OAUTH Routines =======================================================#
-def setup_gmail():
+def setup_gmail(interactive=False):
     """setup_gmail Initialize the GMail API (via OAuth)
 
     [extended_summary]
 
     NOTE: The first time this is run on a machine, it will open a webpage for
           authorizing the API.  All subsequent runs will be silent.
+
+    Parameters
+    ----------
+    interactive : `bool`, optional
+        Is this session interactive?  Relates to how to deal with toke
+        refresh.  [Default: False]
 
     Returns
     -------
@@ -377,28 +383,3 @@ def build_query(after_date=None, before_date=None):
     if before_date:
         q = q + f" before:{before_date}"
     return q
-
-
-# Testing Driver =============================================================#
-def main():
-    """main Main Testing Driver
-
-    Will be removed before this code goes into production.
-    """
-
-    recipient = 'someone@domain.com'
-    test_message = GmailMessage(recipient,
-                                'This is only a test',
-                                'This is an example of sending an attachment with '
-                                'the new GmailMessage class.\n')
-
-    test_message.add_attachment(os.path.join('images','johnnyfive.jpg'))
-
-    send_reciept  = test_message.send()
-
-    print(type(send_reciept))
-    print(send_reciept)
-
-
-if __name__ == '__main__':
-    main()

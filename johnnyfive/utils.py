@@ -37,6 +37,7 @@ class Paths:
     """
     # Main data & config directories
     config = pkg_files('JohnnyFive.config')
+    images = pkg_files('JohnnyFive.images')
 
 
 def read_ligmos_conffiles(confname, conffile='johnnyfive.conf'):
@@ -90,7 +91,7 @@ def print_dict(dd, indent=0, di=4):
         print("Input not a dictionary.")
         return
 
-    for key,value in dd.items():
+    for key, value in dd.items():
         # Recursive for nested dictionaries
         if isinstance(value, dict):
             print(f"{' '*indent}{key:12s}:")

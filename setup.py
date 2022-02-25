@@ -129,7 +129,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['atlassian-python-api', 
+    install_requires=['atlassian-python-api',
                       'beautifulsoup4',
                       'google-api-python-client',
                       'google-auth-httplib2',

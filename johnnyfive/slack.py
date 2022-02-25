@@ -19,7 +19,6 @@ TODO: Properly deal with possible error states (try/except blocks)
 
 # Built-In Libraries
 import logging
-import os
 
 # 3rd Party Libraries
 from slack_sdk import WebClient as SlackWebClient
@@ -96,11 +95,12 @@ class SlackChannel():
             The response from Slack
         """
         response = None
+        print(f"Inside... file = {file}")
         try:
             response = self.client.files_upload(
-                                    channels=self.channel_id,
-                                    file=file,
-                                    title=title)
+                                   channels=self.channel_id,
+                                   file=file,
+                                   title=title)
         except SlackApiError as e:
             print(f"Error: {e}")
         return response
@@ -161,19 +161,3 @@ def setup_slack():
     logger = logging.getLogger(__name__)
 
     return client, logger
-
-
-# Main Testing Driver ========================================================#
-def main():
-    """main Main Testing Driver
-
-    Will be removed before this code goes into production.
-    """
-    slack_object = SlackChannel('bot_test')
-    slack_object.send_message('I am testing sending a message with my '
-                              'shiny new SlackChannel class.')
-    slack_object.upload_file(os.path.join('images','johnnyfive.jpg'),
-                             title='Self-Portrait')
-
-if __name__ == '__main__':
-    main()
