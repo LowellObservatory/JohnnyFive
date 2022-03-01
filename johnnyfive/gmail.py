@@ -152,7 +152,7 @@ class GmailMessage():
 
         # Try to send the message (API: users.messages.send)
         this_try = 0
-        if this_try < n_tries:
+        if self.service and this_try < n_tries:
             try:
                 message = (
                     self.service.users()
