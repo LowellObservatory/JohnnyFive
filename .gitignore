@@ -59,13 +59,25 @@ coverage.xml
 *.log
 
 # Sphinx documentation
-docs/_build/
-docs/build/
+doc/_build/
+doc/build/
+doc/_static
+doc/_templates
 
 # PyBuilder
 target/
 
-# Other manually added stuff
-.vscode/
+# Don't track the actual, real stuff like passwords and hostnames
 config/*.conf
 config/*.json
+
+# Ignore rando code dirs
+.vscode
+*.code-workspace
+.VSCodeCounter
+
+# Stupid OS X stuff
+*.DS_Store
+
+# New File Template
+newPythonFileTemplate.py
