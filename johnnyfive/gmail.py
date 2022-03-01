@@ -146,13 +146,13 @@ class GmailMessage():
 
         # If Gmail `Resource` was not returned earlier, try again
         this_try = 0
-        if not self.service and this_try < n_tries:
+        while not self.service and this_try < n_tries:
             self.service = setup_gmail()
             this_try += 1
 
         # Try to send the message (API: users.messages.send)
         this_try = 0
-        if self.service and this_try < n_tries:
+        while self.service and this_try < n_tries:
             try:
                 message = (
                     self.service.users()
@@ -185,7 +185,7 @@ class GetMessages():
         Date before which to search for messages. Must be in YYYY/MM/DD format.
         [Default: None]
     """
-    def __init__(self, label=None, after=None, before=None):
+    def __init__(self, label=None, after=None, before=None, n_tries=5):
         # Initialize basic stuff
         self.label_list = None
 
@@ -195,15 +195,28 @@ class GetMessages():
         self.query = build_query(after_date=after, before_date=before)
 
         # Get the list of matching messages (API: users.messages.list)
-        results = (
-            self.service.users()
-            .messages()
-            .list(userId="me", labelIds=[self.label_id], q=self.query, maxResults=500)
-            .execute()
-        )
-        self.message_list = results.get('messages', [])
+        this_try = 0
+        while self.service and this_try < n_tries:
+            try:
+                results = (
+                    self.service.users()
+                    .messages()
+                    .list(
+                        userId="me",
+                        labelIds=[self.label_id],
+                        q=self.query,
+                        maxResults=500,
+                    )
+                    .execute()
+                )
+                self.message_list = results.get("messages", [])
+                break
+            except HttpError as error:
+                print(f"An error occurred within GetMessages.__init__(): {error}")
+                self.message_list = []
+                this_try += 1
 
-    def render_message(self, message_id):
+    def render_message(self, message_id, n_tries=5):
         """render_message Retrieve and render a message by ID#
 
         Gmail mnessages are stored in a JSON-like structure that must be
@@ -220,45 +233,55 @@ class GetMessages():
             Dictionary containing the subject, sender, date, and body of
             the message.
         """
-        try:
-            # Get the message, then start parsing (API: users.messages.get)
-            results = (
-                self.service.users()
-                .messages()
-                .get(userId="me", id=message_id)
-                .execute()
-            )
-            payload = results['payload']
-            headers = payload['headers']
+        this_try = 0
+        while self.service and this_try < n_tries:
+            try:
+                # Get the message, then start parsing (API: users.messages.get)
+                results = (
+                    self.service.users()
+                    .messages()
+                    .get(userId="me", id=message_id)
+                    .execute()
+                )
+                payload = results["payload"]
+                headers = payload["headers"]
+                break
 
-            # Look for Subject and Sender Email in the headers
-            for d in headers:
-                if d['name'] == 'Subject':
-                    subject = d['value']
-                if d['name'] == 'From':
-                    sender = d['value']
-                if d['name'] == 'Date':
-                    date = d['value']
+            # If exception, print message and return empty values
+            except HttpError as error:
+                print(f"An error occurred within GetMessages.render_message(): {error}")
+                payload = None
+                this_try += 1
 
-            # The Body of the message is in Encrypted format -- decode it.
-            #  Get the data and decode it with base 64 decoder.
-            data = payload['body']['data']
-            data = data.replace("-","+").replace("_","/")
-            decoded_data = base64.b64decode(data)
+        # Return empty dictionary if unsuccessful in connecting
+        if not payload:
+            return dict(subject="", sender="", date="", body="")
 
-            # `decoded_data` is in lxml format; parse with BeautifulSoup
-            body = BeautifulSoup(decoded_data, "lxml").body()
-            body = body[0].text
+        # Look for Subject and Sender Email in the headers
+        for d in headers:
+            if d['name'] == 'Subject':
+                subject = d['value']
+            if d['name'] == 'From':
+                sender = d['value']
+            if d['name'] == 'Date':
+                date = d['value']
 
-        # If exception, print message and return empty values
-        except HttpError as error:
-            print(f"An error occurred within GetMessages.render_message(): {error}")
-            subject, sender, date, body = '', '', '', ''
+        # The Body of the message is in Encrypted format -- decode it.
+        #  Get the data and decode it with base 64 decoder.
+        data = payload['body']['data']
+        data = data.replace("-","+").replace("_","/")
+        decoded_data = base64.b64decode(data)
+
+        # `decoded_data` is in lxml format; parse with BeautifulSoup
+        body = BeautifulSoup(decoded_data, "lxml").body()
+        body = body[0].text
 
         # Return a dictionary with the plain-text components of this message
         return dict(subject=subject, sender=sender, date=date, body=body)
 
-    def update_msg_labels(self, message_id, add_labels=None, remove_labels=None):
+    def update_msg_labels(
+        self, message_id, add_labels=None, remove_labels=None, n_tries=5
+    ):
         """update_msg_labels Update the labels for a message by ID#
 
         _extended_summary_
@@ -297,18 +320,24 @@ class GetMessages():
         if remove_label_ids:
             body['removeLabelIds'] = remove_label_ids
 
-        try:
-            # Modify message lables (API: users.messages.modify)
-            return (
-                self.service.users()
-                .messages()
-                .modify(userId="me", id=message_id, body=body)
-                .execute()
-            )
-        # If exception, print message and return None
-        except HttpError as error:
-            print(f"An error occurred within GetMessages.update_msg_labels(): {error}")
-            return None
+        this_try = 0
+        while self.service and this_try < n_tries:
+            try:
+                # Modify message lables (API: users.messages.modify)
+                return (
+                    self.service.users()
+                    .messages()
+                    .modify(userId="me", id=message_id, body=body)
+                    .execute()
+                )
+            # If exception, print message
+            except HttpError as error:
+                print(
+                    f"An error occurred within GetMessages.update_msg_labels(): {error}"
+                )
+                this_try += 1
+        # If unsuccessful in connecting, return None
+        return None
 
     def _lableId_from_labelName(self, name):
         """_lableId_from_labelName Get the Label ID from the Label Name
