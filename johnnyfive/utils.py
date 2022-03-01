@@ -29,6 +29,12 @@ from ligmos import utils as lig_utils, workers as lig_workers
 # Internal Imports
 
 
+class PermissionWarning(UserWarning):
+    """PermissionWarning
+    Subclass of UserWarning that is more specific to the case of permissions
+    """
+
+
 # Classes to hold useful information
 class Paths:
     """ Paths

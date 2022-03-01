@@ -16,6 +16,7 @@ Confluence API Documentation:
 
 # Built-In Libraries
 from time import sleep
+import warnings
 
 # 3rd Party Libraries
 from atlassian import Confluence
@@ -67,8 +68,10 @@ class ConfluencePage:
             The comment to be left on the page.
         """
         if not self.space_perms['COMMENT']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  f" to comment in space {self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to comment in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.add_comment,
                                 self.page_id, comment)
@@ -85,8 +88,10 @@ class ConfluencePage:
             The label to be added to the page
         """
         if not self.space_perms['EDITSPACE']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  f" to add a label in space {self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to add a label in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.set_page_label,
                                 self.page_id, label)
@@ -110,9 +115,10 @@ class ConfluencePage:
             Additional comment or description to be included [Default: None]
         """
         if not self.space_perms['CREATEATTACHMENT']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  " to create an attachment in space "
-                                  f"{self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to create an attachment in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.attach_file,
                                 filename, name=name,
@@ -133,8 +139,10 @@ class ConfluencePage:
             will be created at the root of `self.space`. [Default: None]
         """
         if not self.space_perms['EDITSPACE']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  f" to create a page in space {self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to create a page in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         # Check if it exists before we try anything
         if self.exists:
@@ -159,9 +167,10 @@ class ConfluencePage:
             Filename of the attachment to delete
         """
         if not self.space_perms['REMOVEATTACHMENT']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  " to remove an attachment in space "
-                                  f"{self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to remove an attachment in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.delete_attachment,
                                 self.page_id, filename)
@@ -190,8 +199,10 @@ class ConfluencePage:
         the new state.
         """
         if not self.space_perms['REMOVEPAGE']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  f" to remove a page in space {self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to remove a page in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.remove_page, self.page_id)
         self._set_metadata()
@@ -214,8 +225,10 @@ class ConfluencePage:
             _description_
         """
         if not self.space_perms['EDITSPACE']:
-            raise PermissionError(f"User {self.uname} does not have permission"
-                                  f" to update a page in space {self.space}.")
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to update a page in space {self.space}.",
+                          utils.PermissionWarning)
+            return
 
         safe_confluence_connect(self.instance.update_page, self.page_id,
                                 self.title, body)
