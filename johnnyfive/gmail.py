@@ -21,10 +21,12 @@ import base64
 from email.mime import audio, base, image, multipart, text
 import mimetypes
 import os
+import warnings
 
 # 3rd Party Libraries
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
+from googleapiclient.errors import UnknownApiNameOrVersion
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -32,6 +34,8 @@ from google.oauth2.credentials import Credentials
 
 # Internal Imports
 from . import utils
+
+warnings.formatwarning = utils.custom_formatwarning
 
 
 # This scope is for sending email using the OAuth2 library
@@ -120,11 +124,12 @@ class GmailMessage():
                 attachment.set_payload(fp.read())
 
         # Add the attachment to the email message
-        attachment.add_header('Content-Disposition', 'attachment',
-                           filename=os.path.basename(file))
+        attachment.add_header(
+            "Content-Disposition", "attachment", filename=os.path.basename(file)
+        )
         self.message.attach(attachment)
 
-    def send(self, n_tries=5):
+    def send(self):
         """send Send the GmailMessage
 
         _extended_summary_
@@ -145,28 +150,20 @@ class GmailMessage():
         sendable_message = {'raw': encoded_message.decode()}
 
         # If Gmail `Resource` was not returned earlier, try again
-        this_try = 0
-        while not self.service and this_try < n_tries:
+        if not self.service:
             self.service = setup_gmail()
-            this_try += 1
 
         # Try to send the message (API: users.messages.send)
-        this_try = 0
-        while self.service and this_try < n_tries:
-            try:
-                message = (
-                    self.service.users()
-                    .messages()
-                    .send(userId="me", body=sendable_message)
-                    .execute()
-                )
-                return message
-            except HttpError as error:
-                print(f"An error occurred within GmailMessage.send(): {error}")
-                this_try += 1
-
-        # If unsuccessful, return None
-        return None
+        try:
+            return utils.safe_service_connect(
+                self.service.users()
+                .messages()
+                .send(userId="me", body=sendable_message)
+                .execute
+            )
+        except (HttpError, ConnectionError) as error:
+            warnings.warn(f"An error occurred within GmailMessage.send(): {error}")
+            return None
 
 
 class GetMessages():
@@ -185,20 +182,20 @@ class GetMessages():
         Date before which to search for messages. Must be in YYYY/MM/DD format.
         [Default: None]
     """
-    def __init__(self, label=None, after=None, before=None, n_tries=5):
+    def __init__(self, label=None, after=None, before=None, interactive=False):
         # Initialize basic stuff
         self.label_list = None
+        self.message_list = []
 
         # Initialize the Gmail connection
-        self.service = setup_gmail()
+        self.service = setup_gmail(interactive=interactive)
         self.label_id = self._lableId_from_labelName(label)
         self.query = build_query(after_date=after, before_date=before)
 
         # Get the list of matching messages (API: users.messages.list)
-        this_try = 0
-        while self.service and this_try < n_tries:
+        if self.label_id:
             try:
-                results = (
+                results = utils.safe_service_connect(
                     self.service.users()
                     .messages()
                     .list(
@@ -207,16 +204,15 @@ class GetMessages():
                         q=self.query,
                         maxResults=500,
                     )
-                    .execute()
+                    .execute
                 )
                 self.message_list = results.get("messages", [])
-                break
-            except HttpError as error:
-                print(f"An error occurred within GetMessages.__init__(): {error}")
-                self.message_list = []
-                this_try += 1
+            except (HttpError, ConnectionError) as error:
+                warnings.warn(
+                    f"An error occurred within GetMessages.__init__(): {error}"
+                )
 
-    def render_message(self, message_id, n_tries=5):
+    def render_message(self, message_id):
         """render_message Retrieve and render a message by ID#
 
         Gmail mnessages are stored in a JSON-like structure that must be
@@ -233,25 +229,20 @@ class GetMessages():
             Dictionary containing the subject, sender, date, and body of
             the message.
         """
-        this_try = 0
-        while self.service and this_try < n_tries:
-            try:
-                # Get the message, then start parsing (API: users.messages.get)
-                results = (
-                    self.service.users()
-                    .messages()
-                    .get(userId="me", id=message_id)
-                    .execute()
-                )
-                payload = results["payload"]
-                headers = payload["headers"]
-                break
+        try:
+            # Get the message, then start parsing (API: users.messages.get)
+            results = utils.safe_service_connect(
+                self.service.users().messages().get(userId="me", id=message_id).execute
+            )
+            payload = results["payload"]
+            headers = payload["headers"]
 
-            # If exception, print message and return empty values
-            except HttpError as error:
-                print(f"An error occurred within GetMessages.render_message(): {error}")
-                payload = None
-                this_try += 1
+        # If exception, print message and return empty values
+        except (HttpError, ConnectionError) as error:
+            warnings.warn(
+                f"An error occurred within GetMessages.render_message(): {error}"
+            )
+            payload = None
 
         # Return empty dictionary if unsuccessful in connecting
         if not payload:
@@ -279,9 +270,7 @@ class GetMessages():
         # Return a dictionary with the plain-text components of this message
         return dict(subject=subject, sender=sender, date=date, body=body)
 
-    def update_msg_labels(
-        self, message_id, add_labels=None, remove_labels=None, n_tries=5
-    ):
+    def update_msg_labels(self, message_id, add_labels=None, remove_labels=None):
         """update_msg_labels Update the labels for a message by ID#
 
         _extended_summary_
@@ -320,22 +309,19 @@ class GetMessages():
         if remove_label_ids:
             body['removeLabelIds'] = remove_label_ids
 
-        this_try = 0
-        while self.service and this_try < n_tries:
-            try:
-                # Modify message lables (API: users.messages.modify)
-                return (
-                    self.service.users()
-                    .messages()
-                    .modify(userId="me", id=message_id, body=body)
-                    .execute()
-                )
-            # If exception, print message
-            except HttpError as error:
-                print(
-                    f"An error occurred within GetMessages.update_msg_labels(): {error}"
-                )
-                this_try += 1
+        try:
+            # Modify message lables (API: users.messages.modify)
+            return utils.safe_service_connect(
+                self.service.users()
+                .messages()
+                .modify(userId="me", id=message_id, body=body)
+                .execute
+            )
+        # If exception, print message
+        except (HttpError, ConnectionError) as error:
+            warnings.warn(
+                f"An error occurred within GetMessages.update_msg_labels(): {error}"
+            )
         # If unsuccessful in connecting, return None
         return None
 
@@ -354,11 +340,22 @@ class GetMessages():
         `str`
             Label ID
         """
+        if not self.service:
+            return None
+
         # Only do this once
         if not self.label_list:
             # Get the list of labels for the "me" account (API: users.labels.list)
-            results = self.service.users().labels().list(userId='me').execute()
-            self.label_list = results.get('labels', [])
+            try:
+                results = utils.safe_service_connect(
+                    self.service.users().labels().list(userId="me").execute
+                )
+                self.label_list = results.get("labels", [])
+            except (HttpError, ConnectionError) as error:
+                warnings.warn(
+                    f"An error occurred within GetMessages._labelId_from_labelName(): {error}"
+                )
+                self.label_list = []
 
         # If there are no labels, return None
         if not self.label_list:
@@ -394,9 +391,9 @@ def setup_gmail(interactive=False):
     `googleapiclient.discovery.Resource`
         The GMail API service object for consumption by other routines
     """
+    # Read in the credential token
     creds = None
-    if os.path.exists(
-            token_fn := utils.Paths.config.joinpath('gmail_token.json') ):
+    if os.path.exists(token_fn := utils.Paths.config.joinpath("gmail_token.json")):
         creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
 
     # If there are no (valid) credentials available...
@@ -404,7 +401,10 @@ def setup_gmail(interactive=False):
 
         # If just expired, refresh and move on
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                utils.safe_service_connect(creds.refresh, Request())
+            except (HttpError, ConnectionError) as error:
+                warnings.warn(f"An error occurred within setup_gmail(): {error}")
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -414,20 +414,22 @@ def setup_gmail(interactive=False):
 
         # Otherwise, raise an exception and specify to run interactively
         else:
-            raise ValueError("To authenticate user, run (NOT in a container):\n"
-                             "python examples/gmail_example.py -i")
+            raise ValueError(
+                "To authenticate user, run (NOT in a container):\n"
+                "python examples/gmail_example.py -i"
+            )
 
         # Save the credentials for the next run
         with open(token_fn, 'w', encoding='utf-8') as token:
             token.write(creds.to_json())
 
-    # Try logging into the GMail API.  If error, print error & return None
+    # Try building the GMail API service.  If error, print error & return None
     try:
         # Call the Gmail API
         return build('gmail', 'v1', credentials=creds)
-    except HttpError as error:
+    except (HttpError, UnknownApiNameOrVersion) as error:
         # TODO(developer) - Handle errors from gmail API.
-        print(f"An error occurred within setup_gmail(): {error}")
+        warnings.warn(f"An error occurred within setup_gmail(): {error}")
         return None
 
 

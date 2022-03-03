@@ -15,7 +15,6 @@ Confluence API Documentation:
 """
 
 # Built-In Libraries
-from time import sleep
 import warnings
 
 # 3rd Party Libraries
@@ -23,6 +22,8 @@ from atlassian import Confluence
 
 # Internal Imports
 from . import utils
+
+warnings.formatwarning = utils.custom_formatwarning
 
 
 # Set API Components
@@ -67,14 +68,17 @@ class ConfluencePage:
         comment : `str`
             The comment to be left on the page.
         """
-        if not self.space_perms['COMMENT']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to comment in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['COMMENT']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                              f"to comment in space {self.space}.",
+                              utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.add_comment,
-                                self.page_id, comment)
+        utils.safe_service_connect(self.instance.add_comment,
+                                   self.page_id, comment)
 
     def add_label(self, label):
         """add_label Add a label to the Confluence page
@@ -87,21 +91,24 @@ class ConfluencePage:
         label : `str`
             The label to be added to the page
         """
-        if not self.space_perms['EDITSPACE']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to add a label in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['EDITSPACE']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                            f"to add a label in space {self.space}.",
+                            utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.set_page_label,
-                                self.page_id, label)
+        utils.safe_service_connect(self.instance.set_page_label,
+                                   self.page_id, label)
 
     def attach_file(self, filename, name=None, content_type=None,
                     comment=None):
         """attach_file Attach a file to this page
 
         Wrapper for the Confluence method attach_file() that includes the
-        page ID of this object and is wrapped in safe_confluence_connect().
+        page ID of this object and is wrapped in utils.safe_service_connect().
 
         Parameters
         ----------
@@ -114,16 +121,19 @@ class ConfluencePage:
         comment : `str`, optional
             Additional comment or description to be included [Default: None]
         """
-        if not self.space_perms['CREATEATTACHMENT']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to create an attachment in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['CREATEATTACHMENT']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                            f"to create an attachment in space {self.space}.",
+                            utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.attach_file,
-                                filename, name=name,
-                                content_type=content_type,
-                                page_id=self.page_id, comment=comment)
+        utils.safe_service_connect(self.instance.attach_file,
+                                   filename, name=name,
+                                   content_type=content_type,
+                                   page_id=self.page_id, comment=comment)
 
     def create(self, page_body, parent_id=None):
         """create Create a brand new Confluence page
@@ -138,20 +148,23 @@ class ConfluencePage:
             The parent page to place this under.  If none given, the new page
             will be created at the root of `self.space`. [Default: None]
         """
-        if not self.space_perms['EDITSPACE']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to create a page in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['EDITSPACE']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                              f"to create a page in space {self.space}.",
+                              utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
         # Check if it exists before we try anything
         if self.exists:
             print("Can't create a page that already exists!")
             return
 
-        safe_confluence_connect(self.instance.create_page, self.space,
-                                self.title, page_body, parent_id=parent_id,
-                                representation='wiki', editor='v1')
+        utils.safe_service_connect(self.instance.create_page, self.space,
+                                   self.title, page_body, parent_id=parent_id,
+                                   representation='wiki', editor='v1')
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
 
@@ -159,21 +172,24 @@ class ConfluencePage:
         """delete_attachment Delete an attachment from this page
 
         Wrapper for the Confluence method delete_attachment() that includes the
-        page ID of this object and is wrapped in safe_confluence_connect().
+        page ID of this object and is wrapped in utils.safe_service_connect().
 
         Parameters
         ----------
         filename : `str`
             Filename of the attachment to delete
         """
-        if not self.space_perms['REMOVEATTACHMENT']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to remove an attachment in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['REMOVEATTACHMENT']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                            f"to remove an attachment in space {self.space}.",
+                            utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.delete_attachment,
-                                self.page_id, filename)
+        utils.safe_service_connect(self.instance.delete_attachment,
+                                  self.page_id, filename)
 
     def get_page_contents(self):
         """get_page_contents Retrieve the page contents in HTML-ish format
@@ -186,9 +202,9 @@ class ConfluencePage:
         `str`
             The HTML-ish body of the confluence page.
         """
-        contents = safe_confluence_connect(self.instance.get_page_by_id,
-                                          self.page_id,
-                                          expand='body.storage')
+        contents = utils.safe_service_connect(self.instance.get_page_by_id,
+                                              self.page_id,
+                                              expand='body.storage')
         # Extract the contents from the return object
         return contents['body']['storage']['value']
 
@@ -198,13 +214,16 @@ class ConfluencePage:
         Remove the Confluence page and update the instance metadata to reflect
         the new state.
         """
-        if not self.space_perms['REMOVEPAGE']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to remove a page in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['REMOVEPAGE']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                              f"to remove a page in space {self.space}.",
+                              utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.remove_page, self.page_id)
+        utils.safe_service_connect(self.instance.remove_page, self.page_id)
         self._set_metadata()
 
     def update_contents(self, body):
@@ -224,14 +243,17 @@ class ConfluencePage:
         _type_
             _description_
         """
-        if not self.space_perms['EDITSPACE']:
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to update a page in space {self.space}.",
-                          utils.PermissionWarning)
-            return
+        try:
+            if not self.space_perms['EDITSPACE']:
+                warnings.warn(f"User {self.uname} does not have permission "
+                            f"to update a page in space {self.space}.",
+                            utils.PermissionWarning)
+                return
+        except KeyError:
+            warnings.warn("Permission check disabled.", utils.PermissionWarning)
 
-        safe_confluence_connect(self.instance.update_page, self.page_id,
-                                self.title, body)
+        utils.safe_service_connect(self.instance.update_page, self.page_id,
+                                   self.title, body)
 
     def _set_metadata(self):
         """_set_metadata Set the various instance metadata
@@ -239,13 +261,13 @@ class ConfluencePage:
         Especially after a page is created or deleted, this method updates the
         various instance attributes to keep current.
         """
-        self.exists = safe_confluence_connect(self.instance.page_exists,
-                                              self.space, self.title)
+        self.exists = utils.safe_service_connect(self.instance.page_exists,
+                                                 self.space, self.title)
 
         # Page-Specific Information
         self.page_id = None if not self.exists else \
-            safe_confluence_connect(self.instance.get_page_id,
-                                    self.space, self.title)
+            utils.safe_service_connect(self.instance.get_page_id,
+                                       self.space, self.title)
         self.attachment_url = None if not self.exists else \
             f"{self.instance.url}download/attachments/{self.page_id}/"
 
@@ -261,8 +283,15 @@ class ConfluencePage:
         `dict`
             The dictionary of permissions (boolean)
         """
-        perms = safe_confluence_connect(self.instance.get_space_permissions,
-                                        self.space)
+        perms = utils.safe_service_connect(self.instance.get_space_permissions,
+                                           self.space)
+
+        # Check to see if the authenticated user can view permissions
+        if not perms:
+            warnings.warn(f"User {self.uname} needs permission to view "
+                          f"permissions in space {self.space}.   Contact "
+                          "your Confluence administrator.",
+                          utils.PermissionWarning)
 
         perm_dict = {}
         for perm in perms:
@@ -310,43 +339,3 @@ def setup_confluence(use_oauth=False):
     return Confluence( url=setup.host,
                        username=setup.user,
                        password=setup.password )
-
-
-def safe_confluence_connect(func, *args, pause=5, nretries=20, **kwargs):
-    """safe_confluence_connect Safely connect to Confluence (error-catching)
-
-    Wrapper for confluence-connection functions to catch errors that might be
-    kicked (ConnectionTimeout, for instance).
-
-    This function performs a semi-infinite loop, pausing for `5` seconds after
-    each failed function call, up to a maximum of `20` retries.
-
-    Parameters
-    ----------
-    func : `method`
-        The Confluence class method to be wrapped
-    pause : `int` or `float`, optional
-        The number of seconds to wait in between retries to connect.
-        [Default: 5]
-    nretries : `int`, optional
-        The total number of times to retry connecting before returning None
-        [Default: 20]
-
-    Returns
-    -------
-    `Any`
-        The return value of `func` -- or None if unable to run `func`
-    """
-    for i in range(1,nretries+1):
-        try:
-            # Nominal function return
-            return func(*args, **kwargs)
-        except Exception as exception:
-            # If any fail, notify, pause, and retry
-            # TODO: Maybe limit the scope of `Exception` to urllib3/request?
-            print(f"\nExecution of `{func.__name__}` failed because of "
-                  f"{exception.__context__}  or {exception}\nWaiting {pause} "
-                  f"seconds before starting attempt #{(i := i+1)}")
-            sleep(pause)
-    # Give up after `nretries`...
-    return None
