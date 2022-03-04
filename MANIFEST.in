@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include setup.cfg
+
+recursive-include johnnyfive/config *
+recursive-include johnnyfive/images *
+
+global-exclude *.pyc *.o *.so *.DS_Store

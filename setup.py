@@ -134,7 +134,7 @@ setup(
                       'google-api-python-client',
                       'google-auth-httplib2',
                       'google-auth-oauthlib',
-                      'importlib_resources',
+                      'lxml',
                       'python-twitter',
                       'slack_sdk',
                       'ligmos @ git+https://github.com/LowellObservatory/ligmos'],
@@ -158,6 +158,7 @@ setup(
     # If using Python 2.6 or earlier, then these have to be included in
     # MANIFEST.in as well.
     package_data={},
+    include_package_data=True,
 
     # Although 'package_data' is the preferred approach, in some case you may
     # need to place data files outside of your packages. See:
@@ -174,7 +175,10 @@ setup(
     # For example, the following would provide a command called `sample` which
     # executes the function `main` from this package when invoked:
     entry_points={  # Optional
-
+        'console_scripts': [
+            'j5_install_conf=johnnyfive.utils:install_conffiles',
+            'j5_authenticate_gmail=johnnyfive.utils:authenticate_gmail',
+        ]
     },
 
     # List additional URLs that are relevant to your project as a dict.

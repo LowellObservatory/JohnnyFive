@@ -393,7 +393,7 @@ def setup_gmail(interactive=False):
     """
     # Read in the credential token
     creds = None
-    if os.path.exists(token_fn := utils.Paths.config.joinpath("gmail_token.json")):
+    if os.path.exists(token_fn := utils.Paths.gmail_token):
         creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
 
     # If there are no (valid) credentials available...
@@ -409,14 +409,16 @@ def setup_gmail(interactive=False):
         # If running in `interactive`, lauch browser to log in
         elif interactive:
             flow = InstalledAppFlow.from_client_secrets_file(
-                utils.Paths.config.joinpath('gmail_credentials.json'), SCOPES)
+                utils.Paths.gmail_creds, SCOPES)
             creds = flow.run_local_server(port=0)
 
         # Otherwise, raise an exception and specify to run interactively
         else:
             raise ValueError(
-                "To authenticate user, run (NOT in a container):\n"
-                "python examples/gmail_example.py -i"
+                "\nNo Gmail credentials found.  You may need to run:\n"
+                "j5_install_conf\n"
+                "or to authenticate user, run (NOT in a container):\n"
+                "j5_authenticate_gmail"
             )
 
         # Save the credentials for the next run
