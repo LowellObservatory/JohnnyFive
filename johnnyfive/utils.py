@@ -14,8 +14,6 @@ This module is part of the JohnnyFive package, written at Lowell Observatory.
 
 This module contains various utility routines and global variables from across
 the package.
-
-This module primarily trades in... utility?
 """
 
 # Built-In Libraries
@@ -31,6 +29,8 @@ from google.auth.exceptions import TransportError
 import httplib2
 from pkg_resources import resource_filename
 import requests
+from slack_sdk.errors import SlackApiError
+
 
 # Lowell Libraries
 from ligmos import utils as lig_utils, workers as lig_workers
@@ -69,7 +69,7 @@ def authenticate_gmail():
     print("Whee!  We're going to authenticate gamil!")
 
 
-def custom_formatwarning(msg, *args, **kwargs):
+def custom_formatwarning(msg, category, *args, **kwargs):
     """custom_formatwarning Custom Warning Formatting
 
     Ignore everything except the message
@@ -84,7 +84,7 @@ def custom_formatwarning(msg, *args, **kwargs):
     `str`
         The formatted warning string
     """
-    return f"Warning: {str(msg)}\n"
+    return f"{category.__name__}: {str(msg)}\n"
 
 
 def install_conffiles(args=None):
@@ -247,6 +247,13 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
         except HttpError as exception:
             warnings.warn(
                 f"Caught Gmail error... passing up.  {type(exception).__name__}"
+            )
+            raise exception
+
+        # Slack service error, no retry and pass the exception upward
+        except SlackApiError as exception:
+            warnings.warn(
+                f"Caught Slack error... passing up.  {type(exception).__name__}"
             )
             raise exception
 

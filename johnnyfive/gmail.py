@@ -162,7 +162,7 @@ class GmailMessage():
                 .execute
             )
         except (HttpError, ConnectionError) as error:
-            warnings.warn(f"An error occurred within GmailMessage.send(): {error}")
+            warnings.warn(f"An error occurred within GmailMessage.send():\n{error}")
             return None
 
 
@@ -209,7 +209,7 @@ class GetMessages():
                 self.message_list = results.get("messages", [])
             except (HttpError, ConnectionError) as error:
                 warnings.warn(
-                    f"An error occurred within GetMessages.__init__(): {error}"
+                    f"An error occurred within GetMessages.__init__():\n{error}"
                 )
 
     def render_message(self, message_id):
@@ -240,7 +240,7 @@ class GetMessages():
         # If exception, print message and return empty values
         except (HttpError, ConnectionError) as error:
             warnings.warn(
-                f"An error occurred within GetMessages.render_message(): {error}"
+                f"An error occurred within GetMessages.render_message():\n{error}"
             )
             payload = None
 
@@ -320,7 +320,7 @@ class GetMessages():
         # If exception, print message
         except (HttpError, ConnectionError) as error:
             warnings.warn(
-                f"An error occurred within GetMessages.update_msg_labels(): {error}"
+                f"An error occurred within GetMessages.update_msg_labels():\n{error}"
             )
         # If unsuccessful in connecting, return None
         return None
@@ -353,7 +353,7 @@ class GetMessages():
                 self.label_list = results.get("labels", [])
             except (HttpError, ConnectionError) as error:
                 warnings.warn(
-                    f"An error occurred within GetMessages._labelId_from_labelName(): {error}"
+                    f"An error occurred within GetMessages._labelId_from_labelName():\n{error}"
                 )
                 self.label_list = []
 
@@ -404,7 +404,7 @@ def setup_gmail(interactive=False):
             try:
                 utils.safe_service_connect(creds.refresh, Request())
             except (HttpError, ConnectionError) as error:
-                warnings.warn(f"An error occurred within setup_gmail(): {error}")
+                warnings.warn(f"An error occurred within setup_gmail():\n{error}")
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -431,7 +431,7 @@ def setup_gmail(interactive=False):
         return build('gmail', 'v1', credentials=creds)
     except (HttpError, UnknownApiNameOrVersion) as error:
         # TODO(developer) - Handle errors from gmail API.
-        warnings.warn(f"An error occurred within setup_gmail(): {error}")
+        warnings.warn(f"An error occurred within setup_gmail():\n{error}")
         return None
 
 
