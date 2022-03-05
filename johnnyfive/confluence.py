@@ -68,10 +68,7 @@ class ConfluencePage:
         comment : `str`
             The comment to be left on the page.
         """
-        if not self.space_perms.get('COMMENT', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to comment in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('COMMENT', 'add a comment'):
             return
 
         utils.safe_service_connect(self.instance.add_comment,
@@ -88,10 +85,7 @@ class ConfluencePage:
         label : `str`
             The label to be added to the page
         """
-        if not self.space_perms.get('EDITSPACE', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to add a label in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('EDITSPACE', 'add a label'):
             return
 
         utils.safe_service_connect(self.instance.set_page_label,
@@ -115,10 +109,7 @@ class ConfluencePage:
         comment : `str`, optional
             Additional comment or description to be included [Default: None]
         """
-        if not self.space_perms.get('CREATEATTACHMENT', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to create an attachment in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('CREATEATTACHMENT', 'create an attachment'):
             return
 
         utils.safe_service_connect(self.instance.attach_file,
@@ -139,10 +130,7 @@ class ConfluencePage:
             The parent page to place this under.  If none given, the new page
             will be created at the root of `self.space`. [Default: None]
         """
-        if not self.space_perms.get('EDITSPACE', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to create a page in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('EDITSPACE', 'create a page'):
             return
 
         # Check if it exists before we try anything
@@ -167,10 +155,7 @@ class ConfluencePage:
         filename : `str`
             Filename of the attachment to delete
         """
-        if not self.space_perms.get('REMOVEATTACHMENT', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to remove an attachment in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('REMOVEATTACHMENT', 'remove an attachment'):
             return
 
         utils.safe_service_connect(self.instance.delete_attachment,
@@ -199,10 +184,7 @@ class ConfluencePage:
         Remove the Confluence page and update the instance metadata to reflect
         the new state.
         """
-        if not self.space_perms.get('REMOVEPAGE', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to remove a page in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('REMOVEPAGE', 'remove a page'):
             return
 
         utils.safe_service_connect(self.instance.remove_page, self.page_id)
@@ -225,14 +207,51 @@ class ConfluencePage:
         _type_
             _description_
         """
-        if not self.space_perms.get('EDITSPACE', False):
-            warnings.warn(f"User {self.uname} does not have permission "
-                          f"to update a page in space {self.space}.",
-                          utils.PermissionWarning)
+        if not self._check_perm('EDITSPACE', 'update a page'):
             return
 
         utils.safe_service_connect(self.instance.update_page, self.page_id,
                                    self.title, body)
+
+    def _check_perm(self, perm_key, perm_action):
+        """_check_perm Check the perm_dict for a particular action
+
+        Check the `perm_ley` in the permissions dictionary to see whether the
+        requested action is permitted.
+
+        The wrinkle is that if the user does not have permission to see
+        permissions, the perm_dict will be empty -- meaning we don't know
+        if an action will be permitted.  In this case, we press forward and
+        expect that `utils.safe_service_connect()` will take care of any errors
+        that crop up.
+
+        Parameters
+        ----------
+        perm_key : `str`
+            The key in perm_dict to look for
+        perm_action : `str`
+            The action that is requested by the calling function.
+
+        Returns
+        -------
+        `bool`
+            True for perform action, False for not
+        """
+        perm_val = self.space_perms.get(perm_key, None)
+
+        # If the value is explicitely False, warn as such
+        if perm_val is False:
+            warnings.warn(f"User {self.uname} does not have permission "
+                          f"to {perm_action} in space {self.space}.",
+                          utils.PermissionWarning)
+            return False
+
+        # If value is None, no permission check was performed, proceed
+        if perm_val is None:
+            warnings.warn("Permissions check is disabled... hoping for the best.",
+                          utils.PermissionWarning)
+
+        return True
 
     def _set_metadata(self):
         """_set_metadata Set the various instance metadata
