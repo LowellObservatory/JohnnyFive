@@ -18,7 +18,7 @@ TODO: Properly deal with possible error states (try/except blocks)
 """
 
 # Built-In Libraries
-import logging
+import warnings
 
 # 3rd Party Libraries
 from slack_sdk import WebClient as SlackWebClient
@@ -27,13 +27,15 @@ from slack_sdk.errors import SlackApiError
 # Internal Imports
 from . import utils
 
+warnings.formatwarning = utils.custom_formatwarning
+
 
 # Set API Components
-__all__ = ['SlackChannel']
+__all__ = ["SlackChannel"]
 
 
-class SlackChannel():
-    """SlackChannel _summary_
+class SlackChannel:
+    """SlackChannel Class for communicating with a Slack Channel
 
     _extended_summary_
 
@@ -42,8 +44,9 @@ class SlackChannel():
     channel_name : `str`
         Slack Channel into which to post
     """
+
     def __init__(self, channel_name):
-        self.client, _ = setup_slack()
+        self.client = setup_slack()
 
         # Get the channel ID
         self.channel_id = self._read_channels(channel_name)
@@ -66,15 +69,18 @@ class SlackChannel():
         response = None
         try:
             # Call the conversations.list method using the WebClient
-            response = self.client.chat_postMessage(
-                                    channel=self.channel_id,
-                                    text=message
+            response = utils.safe_service_connect(
+                self.client.chat_postMessage,
+                channel=self.channel_id,
+                text=message
                 # You could also use a blocks[] array to send richer content
             )
             # Print result, which includes information about the message (like TS)
-            #print(result)
-        except SlackApiError as e:
-            print(f"Error: {e}")
+            # print(result)
+        except SlackApiError as error:
+            warnings.warn(
+                f"An error occurred within SlackChannel.send_message():\n{error}"
+            )
         return response
 
     def upload_file(self, file, title=None):
@@ -96,12 +102,16 @@ class SlackChannel():
         """
         response = None
         try:
-            response = self.client.files_upload(
-                                   channels=self.channel_id,
-                                   file=file,
-                                   title=title)
-        except SlackApiError as e:
-            print(f"Error: {e}")
+            response = utils.safe_service_connect(
+                self.client.files_upload,
+                channels=self.channel_id,
+                file=file,
+                title=title,
+            )
+        except SlackApiError as error:
+            warnings.warn(
+                f"An error occurred within SlackChannel.upload_file():\n{error}"
+            )
         return response
 
     def _read_channels(self, name):
@@ -121,18 +131,21 @@ class SlackChannel():
 
         try:
             # Call the conversations.list() method using the WebClient
-            for _ in (result := self.client.conversations_list()):
+            result = utils.safe_service_connect(self.client.conversations_list)
+            for _ in result:
                 if conversation_id is not None:
                     break
                 for channel in result["channels"]:
                     if channel["name"] == name:
                         conversation_id = channel["id"]
-                        #Print result
+                        # Print result
                         print(f"Found conversation ID: {conversation_id}")
                         break
 
-        except SlackApiError as e:
-            print(f"Error: {e}")
+        except SlackApiError as error:
+            warnings.warn(
+                f"An error occurred within SlackChannel._read_channels():\n{error}"
+            )
 
         # Return the conversation ID
         return conversation_id
@@ -152,11 +165,14 @@ def setup_slack():
         The logging thingie
     """
     # Read the setup
-    setup = utils.read_ligmos_conffiles('slackSetup')
+    setup = utils.read_ligmos_conffiles("slackSetup")
 
     # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.
-    client = SlackWebClient(token=setup.password)
-    logger = logging.getLogger(__name__)
+    try:
+        client = SlackWebClient(token=setup.password)
+    except SlackApiError as error:
+        warnings.warn(f"An error occurred within setup_slack():\n{error}")
+        client = None
 
-    return client, logger
+    return client
