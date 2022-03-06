@@ -4,7 +4,7 @@ A friendly bot.  Initially started as a twitter bot, but it has grown to become
 a general/multipurpose (email, Slack? Confluence?) notification helper library 
 to post things to places.
 
-![johnnyfive](https://github.com/LowellObservatory/JohnnyFive/blob/master/images/johnnyfive.jpg)
+![johnnyfive](https://github.com/LowellObservatory/JohnnyFive/blob/master/johnnyfive/images/johnnyfive.jpg)
 
 ## Requirements
 
