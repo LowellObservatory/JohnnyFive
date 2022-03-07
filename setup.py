@@ -135,6 +135,7 @@ setup(
                       'google-auth-httplib2',
                       'google-auth-oauthlib',
                       'lxml',
+                      'pyjwt',
                       'python-twitter',
                       'slack_sdk',
                       'ligmos @ git+https://github.com/LowellObservatory/ligmos'],
