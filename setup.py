@@ -137,6 +137,7 @@ setup(
                       'lxml',
                       'pyjwt',
                       'python-twitter',
+                      'requests',
                       'slack_sdk',
                       'ligmos @ git+https://github.com/LowellObservatory/ligmos'],
 

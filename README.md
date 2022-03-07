@@ -31,6 +31,7 @@ j5s.SlackChannel(channel_name)
 - lxml
 - pyjwt
 - python-twitter
+- requests
 - slack_sdk
 - ligmos @ https://github.com/LowellObservatory/ligmos
 
