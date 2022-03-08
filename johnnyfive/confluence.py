@@ -24,8 +24,6 @@ import requests
 # Internal Imports
 from . import utils
 
-warnings.formatwarning = utils.custom_formatwarning
-
 
 # Set API Components
 __all__ = ['ConfluencePage']

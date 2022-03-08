@@ -69,24 +69,6 @@ def authenticate_gmail():
     print("Whee!  We're going to authenticate gamil!")
 
 
-def custom_formatwarning(msg, category, *args, **kwargs):
-    """custom_formatwarning Custom Warning Formatting
-
-    Ignore everything except the message
-
-    Parameters
-    ----------
-    msg : `str`
-        The warning message
-
-    Returns
-    -------
-    `str`
-        The formatted warning string
-    """
-    return f"{category.__name__}: {str(msg)}\n"
-
-
 def install_conffiles(args=None):
     """install_conffiles Console Script for installing configuration files
 

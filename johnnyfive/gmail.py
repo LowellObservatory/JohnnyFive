@@ -35,8 +35,6 @@ from google.oauth2.credentials import Credentials
 # Internal Imports
 from . import utils
 
-warnings.formatwarning = utils.custom_formatwarning
-
 
 # This scope is for sending email using the OAuth2 library
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
