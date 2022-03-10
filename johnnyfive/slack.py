@@ -136,8 +136,6 @@ class SlackChannel:
                 for channel in result["channels"]:
                     if channel["name"] == name:
                         conversation_id = channel["id"]
-                        # Print result
-                        print(f"Found conversation ID: {conversation_id}")
                         break
 
         except SlackApiError as error:
