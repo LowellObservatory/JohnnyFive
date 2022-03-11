@@ -27,8 +27,6 @@ from slack_sdk.errors import SlackApiError
 # Internal Imports
 from . import utils
 
-warnings.formatwarning = utils.custom_formatwarning
-
 
 # Set API Components
 __all__ = ["SlackChannel"]
@@ -138,8 +136,6 @@ class SlackChannel:
                 for channel in result["channels"]:
                     if channel["name"] == name:
                         conversation_id = channel["id"]
-                        # Print result
-                        print(f"Found conversation ID: {conversation_id}")
                         break
 
         except SlackApiError as error:

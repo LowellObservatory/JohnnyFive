@@ -19,11 +19,10 @@ import warnings
 
 # 3rd Party Libraries
 from atlassian import Confluence
+import requests
 
 # Internal Imports
 from . import utils
-
-warnings.formatwarning = utils.custom_formatwarning
 
 
 # Set API Components
@@ -45,10 +44,10 @@ class ConfluencePage:
         An existing Confluence influence, to be used in the case of many
         instances of this class used in short order [Default: None]
     """
-    def __init__(self, space, page_title, instance=None):
+    def __init__(self, space, page_title, instance=None, use_oauth=False):
         self.space = space
         self.title = page_title
-        self.instance = setup_confluence() if not \
+        self.instance = setup_confluence(use_oauth=use_oauth) if not \
                             isinstance(instance, Confluence) else instance
         self.uname = self.instance.username
         self.space_perms = self._set_permdict()
@@ -327,11 +326,9 @@ def setup_confluence(use_oauth=False):
 
     # If we are using OAUTH, instantiate a Confluence object with it
     if use_oauth:
-        oauth_dict = {'access_token': setup.access_token,
-                      'access_token_secret': setup.access_token_secret,
-                      'consumer_key': setup.consumer_key,
-                      'key_cert': setup.key_cert}
-        return Confluence(url=setup.host, oauth=oauth_dict)
+        s = requests.Session()
+        s.headers['Authorization'] = f"Bearer {setup.access_token}"
+        return Confluence(url=setup.host, session=s)
 
     # Else, return a Confluence object instantiated with username/password
     return Confluence( url=setup.host,
