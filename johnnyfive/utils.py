@@ -58,6 +58,22 @@ class Paths:
     gmail_creds = os.path.join(config, "gmail_credentials.json")
 
 
+class authTarget(lig_utils.classes.baseTarget):
+    """authTarget Extension of LIGMOS baseTarget
+
+    Adds specified attributes used in JohnnyFive to silence LIGMOS's
+    "Setting orphan object key" messages
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.access_token = None
+        self.apiKey = None
+        self.apiSecret = None
+        self.tokenKey = None
+        self.tokenSecret = None
+
+
 def authenticate_gmail():
     """authenticate_gmail Console Script for authenticating Gmail
 
@@ -130,7 +146,7 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
     """
     ligconf = lig_utils.confparsers.rawParser(os.path.join(Paths.config, conffile))
     ligconf = lig_workers.confUtils.assignConf(
-        ligconf[confname], lig_utils.classes.baseTarget, backfill=True
+        ligconf[confname], authTarget, backfill=True
     )
     return ligconf
 
