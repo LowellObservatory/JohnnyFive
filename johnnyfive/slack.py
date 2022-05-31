@@ -21,11 +21,10 @@ TODO: Properly deal with possible error states (try/except blocks)
 import warnings
 
 # 3rd Party Libraries
-from slack_sdk import WebClient as SlackWebClient
-from slack_sdk.errors import SlackApiError
+import slack_sdk
 
 # Internal Imports
-from . import utils
+from johnnyfive import utils
 
 
 # Set API Components
@@ -75,7 +74,7 @@ class SlackChannel:
             )
             # Print result, which includes information about the message (like TS)
             # print(result)
-        except SlackApiError as error:
+        except slack_sdk.errors.SlackApiError as error:
             warnings.warn(
                 f"An error occurred within SlackChannel.send_message():\n{error}"
             )
@@ -106,7 +105,7 @@ class SlackChannel:
                 file=file,
                 title=title,
             )
-        except SlackApiError as error:
+        except slack_sdk.errors.SlackApiError as error:
             warnings.warn(
                 f"An error occurred within SlackChannel.upload_file():\n{error}"
             )
@@ -138,7 +137,7 @@ class SlackChannel:
                         conversation_id = channel["id"]
                         break
 
-        except SlackApiError as error:
+        except slack_sdk.errors.SlackApiError as error:
             warnings.warn(
                 f"An error occurred within SlackChannel._read_channels():\n{error}"
             )
@@ -166,8 +165,8 @@ def setup_slack():
     # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.
     try:
-        client = SlackWebClient(token=setup.password)
-    except SlackApiError as error:
+        client = slack_sdk.WebClient(token=setup.password)
+    except slack_sdk.errors.SlackApiError as error:
         warnings.warn(f"An error occurred within setup_slack():\n{error}")
         client = None
 

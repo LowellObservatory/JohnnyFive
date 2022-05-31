@@ -16,6 +16,13 @@
 import os
 import warnings
 
+# Load API into base namespace
+from .confluence import *  # noqa
+from .gmail import *  # noqa
+from .slack import *  # noqa
+from .utils import *  # noqa
+
+
 def short_warning(message, category, filename, lineno, file=None, line=None):
     """
     Return the format for a short warning message.
