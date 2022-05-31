@@ -154,7 +154,7 @@ class ConfluencePage:
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
 
-    def delete_attachment(self, filename, attachment_id=None):
+    def delete_attachment(self, filename):
         """delete_attachment Delete an attachment from this page
 
         Wrapper for the Confluence method delete_attachment() that includes the
@@ -167,25 +167,13 @@ class ConfluencePage:
         ----------
         filename : `str`
             Filename of the attachment to delete
-        attachment_id : `str`
-            ID string of the attachment to delete [Default: None]
         """
         if not self._check_perm("REMOVEATTACHMENT", "remove an attachment"):
             return
 
-        if filename:
-            utils.safe_service_connect(
-                self.instance.delete_attachment, self.page_id, filename
-            )
-        elif attachment_id:
-            utils.safe_service_connect(
-                self.instance.delete_attachment_by_id, self.page_id, attachment_id
-            )
-        else:
-            warnings.warn(
-                "Either a filename or attachment_id must be passed "
-                "to delete_attachment().  Nothing deleted.",
-            )
+        utils.safe_service_connect(
+            self.instance.delete_attachment, self.page_id, filename
+        )
 
     def get_page_attachments(self, limit=200):
         """get_page_attachments _summary_
