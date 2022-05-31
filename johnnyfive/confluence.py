@@ -154,23 +154,38 @@ class ConfluencePage:
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
 
-    def delete_attachment(self, filename):
+    def delete_attachment(self, filename, attachment_id=None):
         """delete_attachment Delete an attachment from this page
 
         Wrapper for the Confluence method delete_attachment() that includes the
         page ID of this object and is wrapped in utils.safe_service_connect().
 
+        An attahment may be deleted using either the filename, or by passing
+        `None` or "" to the filename and specifying the attachment_id.
+
         Parameters
         ----------
         filename : `str`
             Filename of the attachment to delete
+        attachment_id : `str`
+            ID string of the attachment to delete [Default: None]
         """
         if not self._check_perm("REMOVEATTACHMENT", "remove an attachment"):
             return
 
-        utils.safe_service_connect(
-            self.instance.delete_attachment, self.page_id, filename
-        )
+        if filename:
+            utils.safe_service_connect(
+                self.instance.delete_attachment, self.page_id, filename
+            )
+        elif attachment_id:
+            utils.safe_service_connect(
+                self.instance.delete_attachment_by_id, self.page_id, attachment_id
+            )
+        else:
+            warnings.warn(
+                "Either a filename or attachment_id must be passed "
+                "to delete_attachment().  Nothing deleted.",
+            )
 
     def get_page_attachments(self, limit=200):
         """get_page_attachments _summary_
