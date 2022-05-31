@@ -172,6 +172,25 @@ class ConfluencePage:
             self.instance.delete_attachment, self.page_id, filename
         )
 
+    def get_page_attachments(self, limit=200):
+        """get_page_attachments _summary_
+
+        Return a list of page attachment IDs, up to `limit` in length.
+
+        Parameters
+        ----------
+        limit : `int`, optional
+            The number of attachments to return [Default: 200]
+
+        Returns
+        -------
+        `list`
+            List of Confluence attachment IDs
+        """
+        return utils.safe_service_connect(
+            self.instance.get_attachments_from_content, self.page_id, limit=limit
+        )
+
     def get_page_contents(self):
         """get_page_contents Retrieve the page contents in HTML-ish format
 
