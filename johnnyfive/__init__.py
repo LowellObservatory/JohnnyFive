@@ -16,6 +16,8 @@
 import os
 import warnings
 
+__all__ = ["ConfluencePage", "GmailMessage", "GetMessages", "SlackChannel"]
+
 # Load API into base namespace
 from .confluence import *  # noqa
 from .gmail import *  # noqa
