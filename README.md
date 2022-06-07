@@ -9,15 +9,20 @@ This helper library currently contains classes for interacting with Confluence p
 ## JohnnyFive API
 
 ```
-from johnnyfive import confluence as j5c
-j5c.ConfluencePage(space, page_title, instance=None, use_oauth=False)
+import johnnyfive
 
-from johnnyfive import gmail as j5g
-j5g.GmailMessage(toaddr, subject, message_text, fromname=None fromaddr=None, interactive=False)
-j5g.GetMessages(label=None, after=None, before=None, interactive=False)
+# Confluence API
+page = johnnyfive.ConfluencePage(space, page_title, instance=None, use_oauth=False)
 
-from johnnyfive import slack as j5s
-j5s.SlackChannel(channel_name)
+# Gmail API
+message = johnnyfive.GmailMessage(toaddr, subject, message_text, fromname=None fromaddr=None, interactive=False)
+message_list = johnnyfive.GetMessages(label=None, after=None, before=None, interactive=False)
+
+# Slack API
+slack_channel = johnnyfive.SlackChannel(channel_name)
+
+# Utility API
+['PermissionWarning', 'print_dict()', 'safe_service_connect()']
 ```
 
 

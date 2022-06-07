@@ -20,7 +20,7 @@ the package.
 import argparse
 import os
 import shutil
-from time import sleep
+import time
 import warnings
 
 # 3rd Party Libraries
@@ -31,11 +31,14 @@ from pkg_resources import resource_filename
 import requests
 from slack_sdk.errors import SlackApiError
 
-
 # Lowell Libraries
-from ligmos import utils as lig_utils, workers as lig_workers
+import ligmos
 
 # Internal Imports
+
+
+# Set API Components
+__all__ = ["PermissionWarning", "print_dict", "safe_service_connect"]
 
 
 class PermissionWarning(UserWarning):
@@ -58,7 +61,7 @@ class Paths:
     gmail_creds = os.path.join(config, "gmail_credentials.json")
 
 
-class authTarget(lig_utils.classes.baseTarget):
+class authTarget(ligmos.utils.classes.baseTarget):
     """authTarget Extension of LIGMOS baseTarget
 
     Adds specified attributes used in JohnnyFive to silence LIGMOS's
@@ -144,8 +147,8 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
-    ligconf = lig_utils.confparsers.rawParser(os.path.join(Paths.config, conffile))
-    ligconf = lig_workers.confUtils.assignConf(
+    ligconf = ligmos.utils.confparsers.rawParser(os.path.join(Paths.config, conffile))
+    ligconf = ligmos.workers.confUtils.assignConf(
         ligconf[confname], authTarget, backfill=True
     )
     return ligconf
@@ -227,7 +230,7 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
                 print(
                     f"Waiting {pause} seconds before starting attempt #{i}/{nretries}"
                 )
-                sleep(pause)
+                time.sleep(pause)
             else:
                 raise ConnectionError(
                     f"Could not connect to service after {nretries} attempts."
