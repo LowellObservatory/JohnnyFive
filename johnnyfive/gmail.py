@@ -25,12 +25,12 @@ import warnings
 
 # 3rd Party Libraries
 from bs4 import BeautifulSoup
-from googleapiclient.discovery import build
-from googleapiclient.errors import UnknownApiNameOrVersion
-from googleapiclient.errors import HttpError
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+import googleapiclient.discovery
+import googleapiclient.errors
+import google_auth_oauthlib.flow
+import google.auth.exceptions
+import google.auth.transport.requests
+import google.oauth2.credentials
 
 # Internal Imports
 from johnnyfive import utils
@@ -160,7 +160,7 @@ class GmailMessage:
                 .send(userId="me", body=sendable_message)
                 .execute
             )
-        except (HttpError, ConnectionError) as error:
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
             warnings.warn(f"An error occurred within GmailMessage.send():\n{error}")
             return None
 
@@ -207,7 +207,7 @@ class GetMessages:
                     .execute
                 )
                 self.message_list = results.get("messages", [])
-            except (HttpError, ConnectionError) as error:
+            except (googleapiclient.errors.HttpError, ConnectionError) as error:
                 warnings.warn(
                     f"An error occurred within GetMessages.__init__():\n{error}"
                 )
@@ -238,7 +238,7 @@ class GetMessages:
             headers = payload["headers"]
 
         # If exception, print message and return empty values
-        except (HttpError, ConnectionError) as error:
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
             warnings.warn(
                 f"An error occurred within GetMessages.render_message():\n{error}"
             )
@@ -318,7 +318,7 @@ class GetMessages:
                 .execute
             )
         # If exception, print message
-        except (HttpError, ConnectionError) as error:
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
             warnings.warn(
                 f"An error occurred within GetMessages.update_msg_labels():\n{error}"
             )
@@ -351,7 +351,7 @@ class GetMessages:
                     self.service.users().labels().list(userId="me").execute
                 )
                 self.label_list = results.get("labels", [])
-            except (HttpError, ConnectionError) as error:
+            except (googleapiclient.errors.HttpError, ConnectionError) as error:
                 warnings.warn(
                     f"An error occurred within GetMessages._labelId_from_labelName():\n{error}"
                 )
@@ -394,7 +394,9 @@ def setup_gmail(interactive=False):
     # Read in the credential token
     creds = None
     if os.path.exists(token_fn := utils.Paths.gmail_token):
-        creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
+        creds = google.oauth2.credentials.Credentials.from_authorized_user_file(
+            token_fn, SCOPES
+        )
 
     # If there are no (valid) credentials available...
     if not creds or not creds.valid:
@@ -402,13 +404,17 @@ def setup_gmail(interactive=False):
         # If just expired, refresh and move on
         if creds and creds.expired and creds.refresh_token:
             try:
-                utils.safe_service_connect(creds.refresh, Request())
-            except (HttpError, ConnectionError) as error:
+                utils.safe_service_connect(
+                    creds.refresh, google.auth.transport.requests.Request()
+                )
+            except (googleapiclient.errors.HttpError, ConnectionError) as error:
                 warnings.warn(f"An error occurred within setup_gmail():\n{error}")
+            except google.auth.exceptions.RefreshError as error:
+                warnings.warn(f"Some sort of refresh error occurred:\n{error}")
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
-            flow = InstalledAppFlow.from_client_secrets_file(
+            flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
                 utils.Paths.gmail_creds, SCOPES
             )
             creds = flow.run_local_server(port=0)
@@ -429,8 +435,11 @@ def setup_gmail(interactive=False):
     # Try building the GMail API service.  If error, print error & return None
     try:
         # Call the Gmail API
-        return build("gmail", "v1", credentials=creds)
-    except (HttpError, UnknownApiNameOrVersion) as error:
+        return googleapiclient.discovery.build("gmail", "v1", credentials=creds)
+    except (
+        googleapiclient.errors.HttpError,
+        googleapiclient.errors.UnknownApiNameOrVersion,
+    ) as error:
         # TODO(developer) - Handle errors from gmail API.
         warnings.warn(f"An error occurred within setup_gmail():\n{error}")
         return None

@@ -24,12 +24,13 @@ import time
 import warnings
 
 # 3rd Party Libraries
-from googleapiclient.errors import HttpError
-from google.auth.exceptions import TransportError
+import atlassian.errors
+import googleapiclient.errors
+import google.auth.exceptions
 import httplib2
 from pkg_resources import resource_filename
 import requests
-from slack_sdk.errors import SlackApiError
+import slack_sdk.errors
 
 # Lowell Libraries
 import ligmos
@@ -220,7 +221,7 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
         # This is a network error... retry
         except (
             ConnectionError,
-            TransportError,
+            google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
         ) as exception:
             print(
@@ -245,16 +246,30 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
             break
 
         # Gmail service error, no retry and pass the exception upward
-        except HttpError as exception:
+        except googleapiclient.errors.HttpError as exception:
             warnings.warn(
-                f"Caught Gmail error... passing up.  {type(exception).__name__}"
+                f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}"
             )
             raise exception
 
         # Slack service error, no retry and pass the exception upward
-        except SlackApiError as exception:
+        except slack_sdk.errors.SlackApiError as exception:
             warnings.warn(
-                f"Caught Slack error... passing up.  {type(exception).__name__}"
+                f"Caught Slack API error... passing up.  {type(exception).__name__}"
+            )
+            raise exception
+
+        # ===========================================
+        # Specific service errors
+        except atlassian.errors.ApiError as exception:
+            warnings.warn(
+                f"Caught Atlassian API Error... passing up.  {type(exception).__name__}"
+            )
+            raise exception
+
+        except google.auth.exceptions.RefreshError as exception:
+            warnings.warn(
+                f"Caught Google Refresh Error... passing up.  {type(exception).__name__}"
             )
             raise exception
 
