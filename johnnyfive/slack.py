@@ -24,7 +24,7 @@ import warnings
 import slack_sdk
 
 # Internal Imports
-from johnnyfive import utils
+import johnnyfive.utils
 
 
 # Set API Components
@@ -66,7 +66,7 @@ class SlackChannel:
         response = None
         try:
             # Call the conversations.list method using the WebClient
-            response = utils.safe_service_connect(
+            response = johnnyfive.utils.safe_service_connect(
                 self.client.chat_postMessage,
                 channel=self.channel_id,
                 text=message
@@ -99,7 +99,7 @@ class SlackChannel:
         """
         response = None
         try:
-            response = utils.safe_service_connect(
+            response = johnnyfive.utils.safe_service_connect(
                 self.client.files_upload,
                 channels=self.channel_id,
                 file=file,
@@ -128,7 +128,9 @@ class SlackChannel:
 
         try:
             # Call the conversations.list() method using the WebClient
-            result = utils.safe_service_connect(self.client.conversations_list)
+            result = johnnyfive.utils.safe_service_connect(
+                self.client.conversations_list
+            )
             for _ in result:
                 if conversation_id is not None:
                     break
@@ -160,7 +162,7 @@ def setup_slack():
         The logging thingie
     """
     # Read the setup
-    setup = utils.read_ligmos_conffiles("slackSetup")
+    setup = johnnyfive.utils.read_ligmos_conffiles("slackSetup")
 
     # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.

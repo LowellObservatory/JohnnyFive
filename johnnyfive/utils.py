@@ -19,6 +19,7 @@ the package.
 # Built-In Libraries
 import argparse
 import os
+import pathlib
 import shutil
 import time
 import warnings
@@ -39,7 +40,7 @@ import ligmos
 
 
 # Set API Components
-__all__ = ["PermissionWarning", "print_dict", "safe_service_connect"]
+__all__ = ["PermissionWarning", "print_dict", "safe_service_connect", "proper_print"]
 
 
 class PermissionWarning(UserWarning):
@@ -56,10 +57,10 @@ class Paths:
     """
 
     # Main data & config directories
-    config = resource_filename("johnnyfive", "config")
-    images = resource_filename("johnnyfive", "images")
-    gmail_token = os.path.join(config, "gmail_token.json")
-    gmail_creds = os.path.join(config, "gmail_credentials.json")
+    config = pathlib.Path(resource_filename("johnnyfive", "config"))
+    images = pathlib.Path(resource_filename("johnnyfive", "images"))
+    gmail_token = config.joinpath("gmail_token.json")
+    gmail_creds = config.joinpath("gmail_credentials.json")
 
 
 class authTarget(ligmos.utils.classes.baseTarget):
@@ -76,17 +77,6 @@ class authTarget(ligmos.utils.classes.baseTarget):
         self.apiSecret = None
         self.tokenKey = None
         self.tokenSecret = None
-
-
-def authenticate_gmail():
-    """authenticate_gmail Console Script for authenticating Gmail
-
-    This will be a command-line script for doing the interactive authentication
-    for Gmail needed to keep the tokens, etc. up to date.
-
-    TODO: Actually implement this function!
-    """
-    print("Whee!  We're going to authenticate gamil!")
 
 
 def install_conffiles(args=None):
@@ -187,7 +177,7 @@ def print_dict(dd, indent=0, di=4):
             print(f"{' '*indent}{key:12s}: {value}")
 
 
-def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
+def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs):
     """safe_service_connect Safely connect to Service (error-catching)
 
     Wrapper for Service-connection functions to catch errors that might be
@@ -206,12 +196,15 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
     nretries : `int`, optional
         The total number of times to retry connecting before returning None
         [Default: 10]
+    logger :
 
     Returns
     -------
     `Any`
         The return value of `func` -- or None if unable to run `func`
     """
+
+    # Now, for the actual function...
     for i in range(1, nretries + 1):
 
         # Nominal function return
@@ -224,12 +217,17 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
             google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
         ) as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
+            proper_print(
+                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}",
+                "warn",
+                logger,
             )
+
             if (i := i + 1) <= nretries:
-                print(
-                    f"Waiting {pause} seconds before starting attempt #{i}/{nretries}"
+                proper_print(
+                    f"Waiting {pause} seconds before starting attempt #{i}/{nretries}",
+                    "info",
+                    logger,
                 )
                 time.sleep(pause)
             else:
@@ -239,39 +237,67 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
 
         # This is for a Service error (premissions, etc.), no retry
         except requests.exceptions.HTTPError as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
-                "\nAborting..."
+            proper_print(
+                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}",
+                "except",
+                logger,
             )
+            proper_print("Aborting...", "except", logger)
             break
 
         # Gmail service error, no retry and pass the exception upward
         except googleapiclient.errors.HttpError as exception:
-            warnings.warn(
-                f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}"
+            proper_print(
+                f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
             )
             raise exception
 
         # Slack service error, no retry and pass the exception upward
         except slack_sdk.errors.SlackApiError as exception:
-            warnings.warn(
-                f"Caught Slack API error... passing up.  {type(exception).__name__}"
+            proper_print(
+                f"Caught Slack API error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
             )
             raise exception
 
         # ===========================================
         # Specific service errors
         except atlassian.errors.ApiError as exception:
-            warnings.warn(
-                f"Caught Atlassian API Error... passing up.  {type(exception).__name__}"
+            proper_print(
+                f"Caught Atlassian API Error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
             )
             raise exception
 
         except google.auth.exceptions.RefreshError as exception:
-            warnings.warn(
-                f"Caught Google Refresh Error... passing up.  {type(exception).__name__}"
+            proper_print(
+                f"Caught Google Refresh Error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
             )
             raise exception
 
     # If not successful, return None
     return None
+
+
+def proper_print(msg, level, logger=None):
+    if level == "info":
+        if logger is None:
+            print(msg)
+        else:
+            logger.info(msg)
+    elif level == "warn":
+        if logger is None:
+            warnings.warn(msg)
+        else:
+            logger.warning(msg)
+    elif level == "except":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.exception(msg)
