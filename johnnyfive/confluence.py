@@ -15,7 +15,6 @@ Confluence API Documentation:
 """
 
 # Built-In Libraries
-import warnings
 
 # 3rd Party Libraries
 import atlassian
@@ -44,13 +43,21 @@ class ConfluencePage:
         An existing Confluence object instance to be used instead of
         reinstantiating a new Confluence object for communication and
         authentication.  [Default: None]
+    use_oauth : bool, optional
+        Use OAUTH authentication instead of username/password?  [Default: False]
+    logger :
     """
 
-    def __init__(self, space, page_title, instance=None, use_oauth=False):
+    def __init__(self, space, page_title, instance=None, use_oauth=False, logger=None):
+
+        # Initialize instance variables
         self.space = space
         self.title = page_title
+        self.logger = logger
+
+        # Set up the Confluence object instance
         self.confluence = (
-            setup_confluence(use_oauth=use_oauth)
+            setup_confluence(use_oauth=use_oauth, logger=self.logger)
             if not isinstance(instance, atlassian.Confluence)
             else instance
         )
@@ -75,7 +82,7 @@ class ConfluencePage:
             return
 
         johnnyfive.utils.safe_service_connect(
-            self.confluence.add_comment, self.page_id, comment
+            self.confluence.add_comment, self.page_id, comment, logger=self.logger
         )
 
     def add_label(self, label):
@@ -93,7 +100,7 @@ class ConfluencePage:
             return
 
         johnnyfive.utils.safe_service_connect(
-            self.confluence.set_page_label, self.page_id, label
+            self.confluence.set_page_label, self.page_id, label, logger=self.logger
         )
 
     def attach_file(self, filename, name=None, content_type=None, comment=None):
@@ -123,6 +130,7 @@ class ConfluencePage:
             content_type=content_type,
             page_id=self.page_id,
             comment=comment,
+            logger=self.logger,
         )
 
     def create(self, page_body, parent_id=None):
@@ -143,8 +151,12 @@ class ConfluencePage:
 
         # Check if it exists before we try anything
         if self.exists:
-            print("Can't create a page that already exists!")
+            johnnyfive.utils.proper_print(
+                "Can't create a page that already exists!", "info", self.logger
+            )
             return
+
+        print(f" ***** logger: {type(self.logger)}")
 
         johnnyfive.utils.safe_service_connect(
             self.confluence.create_page,
@@ -154,6 +166,7 @@ class ConfluencePage:
             parent_id=parent_id,
             representation="wiki",
             editor="v1",
+            logger=self.logger,
         )
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
@@ -176,7 +189,10 @@ class ConfluencePage:
             return
 
         johnnyfive.utils.safe_service_connect(
-            self.confluence.delete_attachment, self.page_id, filename
+            self.confluence.delete_attachment,
+            self.page_id,
+            filename,
+            logger=self.logger,
         )
 
     def get_page_attachments(self, limit=200):
@@ -195,7 +211,10 @@ class ConfluencePage:
             List of Confluence attachment IDs
         """
         return johnnyfive.utils.safe_service_connect(
-            self.confluence.get_attachments_from_content, self.page_id, limit=limit
+            self.confluence.get_attachments_from_content,
+            self.page_id,
+            limit=limit,
+            logger=self.logger,
         )
 
     def get_page_contents(self):
@@ -210,7 +229,10 @@ class ConfluencePage:
             The HTML-ish body of the confluence page.
         """
         contents = johnnyfive.utils.safe_service_connect(
-            self.confluence.get_page_by_id, self.page_id, expand="body.storage"
+            self.confluence.get_page_by_id,
+            self.page_id,
+            expand="body.storage",
+            logger=self.logger,
         )
         # Extract the contents from the return object
         return contents["body"]["storage"]["value"]
@@ -224,7 +246,9 @@ class ConfluencePage:
         if not self._check_perm("REMOVEPAGE", "remove a page"):
             return
 
-        johnnyfive.utils.safe_service_connect(self.confluence.remove_page, self.page_id)
+        johnnyfive.utils.safe_service_connect(
+            self.confluence.remove_page, self.page_id, logger=self.logger
+        )
         self._set_metadata()
 
     def update_contents(self, body):
@@ -243,7 +267,11 @@ class ConfluencePage:
             return
 
         johnnyfive.utils.safe_service_connect(
-            self.confluence.update_page, self.page_id, self.title, body
+            self.confluence.update_page,
+            self.page_id,
+            self.title,
+            body,
+            logger=self.logger,
         )
 
     def _check_perm(self, perm_key, perm_action):
@@ -274,18 +302,20 @@ class ConfluencePage:
 
         # If the value is explicitely False, warn as such
         if perm_val is False:
-            warnings.warn(
+            johnnyfive.utils.proper_print(
                 f"User {self.confluence.username} does not have permission "
                 f"to {perm_action} in space {self.space}.",
-                johnnyfive.utils.PermissionWarning,
+                "warn",
+                self.logger,
             )
             return False
 
         # If value is None, no permission check was performed, proceed
         if perm_val is None:
-            warnings.warn(
+            johnnyfive.utils.proper_print(
                 "Permissions check is disabled... hoping for the best.",
-                johnnyfive.utils.PermissionWarning,
+                "warn",
+                self.logger,
             )
 
         return True
@@ -297,7 +327,7 @@ class ConfluencePage:
         various instance attributes to keep current.
         """
         self.exists = johnnyfive.utils.safe_service_connect(
-            self.confluence.page_exists, self.space, self.title
+            self.confluence.page_exists, self.space, self.title, logger=self.logger
         )
 
         # Page-Specific Information
@@ -305,7 +335,7 @@ class ConfluencePage:
             None
             if not self.exists
             else johnnyfive.utils.safe_service_connect(
-                self.confluence.get_page_id, self.space, self.title
+                self.confluence.get_page_id, self.space, self.title, logger=self.logger
             )
         )
         self.attachment_url = (
@@ -327,16 +357,17 @@ class ConfluencePage:
             The dictionary of permissions (boolean)
         """
         perms = johnnyfive.utils.safe_service_connect(
-            self.confluence.get_space_permissions, self.space
+            self.confluence.get_space_permissions, self.space, logger=self.logger
         )
 
         # Check to see if the authenticated user can view permissions
         if not perms:
-            warnings.warn(
+            johnnyfive.utils.proper_print(
                 f"User {self.confluence.username} needs permission to view "
                 f"permissions in space {self.space}.   Contact "
                 "your Confluence administrator.",
-                johnnyfive.utils.PermissionWarning,
+                "warn",
+                self.logger,
             )
 
         perm_dict = {}
@@ -351,7 +382,7 @@ class ConfluencePage:
 
 
 # Internal Functions =========================================================#
-def setup_confluence(use_oauth=False):
+def setup_confluence(use_oauth=False, logger=None):
     """Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
@@ -365,6 +396,7 @@ def setup_confluence(use_oauth=False):
     ----------
     use_oauth : bool, optional
         Use the OAUTH authentication scheme?  [Default: False]
+    logger :
 
     Returns
     -------

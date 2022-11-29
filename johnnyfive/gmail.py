@@ -21,7 +21,6 @@ import base64
 import email.mime
 import mimetypes
 import os
-import warnings
 
 # 3rd Party Libraries
 from bs4 import BeautifulSoup
@@ -114,18 +113,18 @@ class GmailMessage:
         # Case out the content type
         main_type, sub_type = content_type.split("/", 1)
         if main_type == "text":
-            with open(file, "rb") as fp:
-                attachment = email.mime.text.MIMEText(fp.read(), _subtype=sub_type)
+            with open(file, "rb") as f_obj:
+                attachment = email.mime.text.MIMEText(f_obj.read(), _subtype=sub_type)
         elif main_type == "image":
-            with open(file, "rb") as fp:
-                attachment = email.mime.image.MIMEImage(fp.read(), _subtype=sub_type)
+            with open(file, "rb") as f_obj:
+                attachment = email.mime.image.MIMEImage(f_obj.read(), _subtype=sub_type)
         elif main_type == "audio":
-            with open(file, "rb") as fp:
-                attachment = email.mime.audio.MIMEAudio(fp.read(), _subtype=sub_type)
+            with open(file, "rb") as f_obj:
+                attachment = email.mime.audio.MIMEAudio(f_obj.read(), _subtype=sub_type)
         else:
-            with open(file, "rb") as fp:
+            with open(file, "rb") as f_obj:
                 attachment = email.mime.base.MIMEBase(main_type, sub_type)
-                attachment.set_payload(fp.read())
+                attachment.set_payload(f_obj.read())
 
         # Add the attachment to the email message
         attachment.add_header(
@@ -203,6 +202,14 @@ class GetMessages:
 
         # Initialize the Gmail connection
         self.service = setup_gmail(interactive=interactive, logger=self.logger)
+
+        # If we cannot connect to GMail, return here with an empty message_list
+        if self.service is None:
+            johnnyfive.utils.proper_print(
+                "Cannot connect to GMail!", "error", self.logger
+            )
+            return
+
         self.label_id = self._lableId_from_labelName(label)
         self.query = self.build_query(after_date=after, before_date=before)
 
@@ -269,13 +276,13 @@ class GetMessages:
             return dict(subject="", sender="", date="", body="")
 
         # Look for Subject and Sender Email in the headers
-        for d in headers:
-            if d["name"] == "Subject":
-                subject = d["value"]
-            if d["name"] == "From":
-                sender = d["value"]
-            if d["name"] == "Date":
-                date = d["value"]
+        for head_dict in headers:
+            if head_dict["name"] == "Subject":
+                subject = head_dict["value"]
+            if head_dict["name"] == "From":
+                sender = head_dict["value"]
+            if head_dict["name"] == "Date":
+                date = head_dict["value"]
 
         # The Body of the message is in Encrypted format -- decode it.
         #  Get the data and decode it with base 64 decoder.
@@ -416,12 +423,12 @@ class GetMessages:
         `str`
             The appropriate query string
         """
-        q = ""
+        query = ""
         if after_date:
-            q = q + f" after:{after_date}"
+            query = query + f" after:{after_date}"
         if before_date:
-            q = q + f" before:{before_date}"
-        return q
+            query = query + f" before:{before_date}"
+        return query
 
 
 # Newer OAUTH Routines =======================================================#
@@ -468,9 +475,7 @@ def setup_gmail(interactive=False, logger=None):
                     f"An error occurred within setup_gmail(): {error}", "warn", logger
                 )
             except google.auth.exceptions.RefreshError as error:
-                johnnyfive.utils.proper_print(
-                    f"Some sort of refresh error occurred:\n{error}", "warn", logger
-                )
+                return None
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -482,12 +487,15 @@ def setup_gmail(interactive=False, logger=None):
 
         # Otherwise, raise an exception and specify to run interactively
         else:
-            raise ValueError(
-                "\nNo Gmail credentials found.  You may need to run:\n"
-                "j5_install_conf\n"
-                "or to authenticate user, run (NOT in a container):\n"
-                "j5_authenticate_gmail"
+            johnnyfive.utils.proper_print(
+                "No Gmail credentials found.  You may need to run:\n"
+                "\t`j5_install_conf`\n"
+                "\tor to authenticate user, run (NOT in a container):\n"
+                "\t`j5_authenticate_gmail`",
+                "error",
+                logger,
             )
+            return None
 
         # Save the credentials for the next run
         with open(token_fn, "w", encoding="utf-8") as token:
