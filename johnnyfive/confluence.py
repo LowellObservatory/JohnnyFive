@@ -45,7 +45,8 @@ class ConfluencePage:
         authentication.  [Default: None]
     use_oauth : bool, optional
         Use OAUTH authentication instead of username/password?  [Default: False]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
 
     def __init__(self, space, page_title, instance=None, use_oauth=False, logger=None):
@@ -133,7 +134,7 @@ class ConfluencePage:
             logger=self.logger,
         )
 
-    def create(self, page_body, parent_id=None):
+    def create(self, page_body, parent_id=None, representation="wiki"):
         """Create a brand new Confluence page
 
         Summon from the depths of computing a new page.
@@ -145,6 +146,9 @@ class ConfluencePage:
         parent_id : str, optional
             The parent page to place this under.  If none given, the new page
             will be created at the root of ``self.space``. [Default: None]
+        representation : str, optional
+            The Confluence strorage representation to use.  [Default: "wiki"]
+            Use "storage" for XML-based documents
         """
         if not self._check_perm("EDITSPACE", "create a page"):
             return
@@ -156,15 +160,13 @@ class ConfluencePage:
             )
             return
 
-        print(f" ***** logger: {type(self.logger)}")
-
         johnnyfive.utils.safe_service_connect(
             self.confluence.create_page,
             self.space,
             self.title,
             page_body,
             parent_id=parent_id,
-            representation="wiki",
+            representation=representation,
             editor="v1",
             logger=self.logger,
         )
@@ -396,7 +398,8 @@ def setup_confluence(use_oauth=False, logger=None):
     ----------
     use_oauth : bool, optional
         Use the OAUTH authentication scheme?  [Default: False]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
 
     Returns
     -------

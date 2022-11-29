@@ -190,7 +190,8 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
     nretries : int, optional
         The total number of times to retry connecting before returning None
         [Default: 10]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
 
     Returns
     -------
@@ -237,21 +238,22 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
         except requests.exceptions.HTTPError as exception:
             proper_print(
                 f"Execution of `{func.__name__}` failed because of HTTP error."
-                f"\n{exception}",
-                "except",
+                f"\n{type(exception).__name__}  {exception.args}",
+                "error",
                 logger,
             )
-            proper_print("Aborting...", "error", logger)
+            proper_print("Aborting...", "except", logger)
+            raise exception
             break
 
-        # Gmail service error, no retry and pass the exception upward
-        except googleapiclient.errors.HttpError as exception:
-            proper_print(
-                f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}",
-                "except",
-                logger,
-            )
-            raise exception
+        # # Gmail service error, no retry and pass the exception upward
+        # except googleapiclient.errors.HttpError as exception:
+        #     proper_print(
+        #         f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}",
+        #         "except",
+        #         logger,
+        #     )
+        #     raise exception
 
         # Slack service error, no retry and pass the exception upward
         except slack_sdk.errors.SlackApiError as exception:
@@ -298,8 +300,8 @@ def proper_print(msg, level, logger=None):
         The message to convey
     level : str
         The logging level.  One of [``info``,``warn``,``except``]
-    logger : _type_, optional
-        The logger to use, if any [Default: None]
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
     if level == "info":
         if logger is None:

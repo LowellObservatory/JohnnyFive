@@ -61,7 +61,8 @@ class GmailMessage:
         Display Name of the sender (i.e. which bot) [Default: None]
     fromaddr : `str`, optional
         Sender email address [Default: Value from [gmailSetup]]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
 
     def __init__(
@@ -189,7 +190,8 @@ class GetMessages:
     before : str, optional
         Date before which to search for messages. Must be in YYYY/MM/DD format.
         [Default: None]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
 
     def __init__(
@@ -445,7 +447,8 @@ def setup_gmail(interactive=False, logger=None):
     interactive : bool, optional
         Is this session interactive?  Relates to how to deal with toke
         refresh.  [Default: False]
-    logger :
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
 
     Returns
     -------

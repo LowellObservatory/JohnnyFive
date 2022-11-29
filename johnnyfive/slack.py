@@ -149,7 +149,7 @@ class SlackChannel:
 
 
 # Internal Functions =========================================================#
-def setup_slack():
+def setup_slack(logger=None):
     """setup_slack Setup the Slack WebClient for posting
 
     _extended_summary_
@@ -158,8 +158,8 @@ def setup_slack():
     -------
     client : `slack_sdk.web.client.WebClient`
         The WebClient object needed for reading and writing
-    logger : `logging.Logger`
-        The logging thingie
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
     # Read the setup
     setup = johnnyfive.utils.read_ligmos_conffiles("slackSetup")
