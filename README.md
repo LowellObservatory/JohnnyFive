@@ -15,7 +15,7 @@ import johnnyfive
 page = johnnyfive.ConfluencePage(space, page_title, instance=None, use_oauth=False)
 
 # Gmail API
-message = johnnyfive.GmailMessage(toaddr, subject, message_text, fromname=None fromaddr=None, interactive=False)
+message = johnnyfive.GmailMessage(toaddr, subject, message_text, fromname=None, fromaddr=None, interactive=False)
 message_list = johnnyfive.GetMessages(label=None, after=None, before=None, interactive=False)
 
 # Slack API

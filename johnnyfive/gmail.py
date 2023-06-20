@@ -18,7 +18,11 @@ Gmail API Documentation:
 
 # Built-In Libraries
 import base64
-import email.mime
+import email.mime.audio
+import email.mime.base
+import email.mime.image
+import email.mime.multipart
+import email.mime.text
 import mimetypes
 import os
 
