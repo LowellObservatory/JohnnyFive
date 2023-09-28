@@ -18,8 +18,8 @@ the package.
 
 # Built-In Libraries
 import argparse
+from importlib import resources
 import os
-import pathlib
 import shutil
 import time
 import warnings
@@ -29,7 +29,6 @@ import atlassian.errors
 import googleapiclient.errors
 import google.auth.exceptions
 import httplib2
-from pkg_resources import resource_filename
 import requests
 import slack_sdk.errors
 
@@ -51,10 +50,10 @@ class Paths:
     """
 
     # Main data & config directories
-    config = pathlib.Path(resource_filename("johnnyfive", "config"))
-    images = pathlib.Path(resource_filename("johnnyfive", "images"))
-    gmail_token = config.joinpath("gmail_token.json")
-    gmail_creds = config.joinpath("gmail_credentials.json")
+    config = resources.files("johnnyfive") / "config"
+    images = resources.files("johnnyfive") / "images"
+    gmail_token = config / "gmail_token.json"
+    gmail_creds = config / "gmail_credentials.json"
 
 
 class authTarget(ligmos.utils.classes.baseTarget):
@@ -201,7 +200,6 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
 
     # Now, for the actual function...
     for i in range(1, nretries + 1):
-
         # Nominal function return
         try:
             return func(*args, **kwargs)

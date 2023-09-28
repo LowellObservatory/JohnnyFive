@@ -50,7 +50,6 @@ class ConfluencePage:
     """
 
     def __init__(self, space, page_title, instance=None, use_oauth=False, logger=None):
-
         # Initialize instance variables
         self.space = space
         self.title = page_title

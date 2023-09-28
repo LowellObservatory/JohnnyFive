@@ -468,7 +468,6 @@ def setup_gmail(interactive=False, logger=None):
 
     # If there are no (valid) credentials available...
     if not creds or not creds.valid:
-
         # If just expired, refresh and move on
         if creds and creds.expired and creds.refresh_token:
             try:
