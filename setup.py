@@ -179,7 +179,7 @@ setup(
     entry_points={  # Optional
         'console_scripts': [
             'j5_install_conf=johnnyfive.utils:install_conffiles',
-            'j5_authenticate_gmail=johnnyfive.utils:authenticate_gmail',
+            'j5_authenticate_gmail=johnnyfive.gmail:authenticate_gmail',
         ]
     },
 

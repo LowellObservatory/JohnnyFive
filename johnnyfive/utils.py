@@ -18,18 +18,19 @@ the package.
 
 # Built-In Libraries
 import argparse
+from importlib import resources
 import os
 import shutil
 import time
 import warnings
 
 # 3rd Party Libraries
-from googleapiclient.errors import HttpError
-from google.auth.exceptions import TransportError
+import atlassian.errors
+import googleapiclient.errors
+import google.auth.exceptions
 import httplib2
-from pkg_resources import resource_filename
 import requests
-from slack_sdk.errors import SlackApiError
+import slack_sdk.errors
 
 # Lowell Libraries
 import ligmos
@@ -38,13 +39,7 @@ import ligmos
 
 
 # Set API Components
-__all__ = ["PermissionWarning", "print_dict", "safe_service_connect"]
-
-
-class PermissionWarning(UserWarning):
-    """PermissionWarning
-    Subclass of UserWarning that is more specific to the case of permissions
-    """
+__all__ = ["safe_service_connect", "print_dict", "proper_print"]
 
 
 # Classes to hold useful information
@@ -55,14 +50,14 @@ class Paths:
     """
 
     # Main data & config directories
-    config = resource_filename("johnnyfive", "config")
-    images = resource_filename("johnnyfive", "images")
-    gmail_token = os.path.join(config, "gmail_token.json")
-    gmail_creds = os.path.join(config, "gmail_credentials.json")
+    config = resources.files("johnnyfive") / "config"
+    images = resources.files("johnnyfive") / "images"
+    gmail_token = config / "gmail_token.json"
+    gmail_creds = config / "gmail_credentials.json"
 
 
 class authTarget(ligmos.utils.classes.baseTarget):
-    """authTarget Extension of LIGMOS baseTarget
+    """Extension of LIGMOS baseTarget class
 
     Adds specified attributes used in JohnnyFive to silence LIGMOS's
     "Setting orphan object key" messages
@@ -77,27 +72,16 @@ class authTarget(ligmos.utils.classes.baseTarget):
         self.tokenSecret = None
 
 
-def authenticate_gmail():
-    """authenticate_gmail Console Script for authenticating Gmail
-
-    This will be a command-line script for doing the interactive authentication
-    for Gmail needed to keep the tokens, etc. up to date.
-
-    TODO: Actually implement this function!
-    """
-    print("Whee!  We're going to authenticate gamil!")
-
-
 def install_conffiles(args=None):
-    """install_conffiles Console Script for installing configuration files
+    """Console Script for installing configuration files
 
     This function is designed to install the (secret) configuration files
-    (e.g., gmail_credentials.json or johnnyfive.conf) into the proper
-    config/ directory buried wherever on the filesystem.
+    (`e.g.`, ``gmail_credentials.json`` or ``johnnyfive.conf``) into the proper
+    ``config/`` directory buried wherever on the filesystem.
 
     Parameters
     ----------
-    args : `Any`, optional
+    args : Any, optional
         The arguments passed from the command line [Default: None]
     """
     # Use argparse for the Command-Line Script
@@ -128,7 +112,7 @@ def install_conffiles(args=None):
 
 
 def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
-    """read_ligmos_conffiles Read a configuration file using LIGMOS
+    """Read a configuration file using LIGMOS
 
     Having this as a separate function may be a bit of an overkill, but it
     makes it easier to keep the ligmos imports only in one place, and
@@ -136,14 +120,14 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
 
     Parameters
     ----------
-    confname : `str`
+    confname : str
         Name of the table within the configuration file to parse
-    conffile : `str`
+    conffile : str
         Name of the configuration file to parse
 
     Returns
     -------
-    `ligmos.utils.classes.baseTarget`
+    :class:`ligmos.utils.classes.baseTarget`
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
@@ -155,7 +139,7 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
 
 
 def print_dict(dd, indent=0, di=4):
-    """print_dict Print a dictionary in tree format
+    """Print a dictionary in tree format
 
     You know how sometimes you get these nested dictionaries, and they're a
     pain to visually parse?  This routine prints out the contents of a
@@ -166,11 +150,11 @@ def print_dict(dd, indent=0, di=4):
 
     Parameters
     ----------
-    dd : `dict`
+    dd : dict
         The dictionary to print
-    indent : `int`, optional
+    indent : int, optional
         The initial indentation for the tree [Default: 0]
-    di: `int`, optional
+    di: int, optional
         The incremental indentation for each layer of the tree [Default: 4]
     """
     if not isinstance(dd, dict):
@@ -186,33 +170,36 @@ def print_dict(dd, indent=0, di=4):
             print(f"{' '*indent}{key:12s}: {value}")
 
 
-def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
-    """safe_service_connect Safely connect to Service (error-catching)
+def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs):
+    """Safely connect to Service (includes error-catching)
 
     Wrapper for Service-connection functions to catch errors that might be
-    kicked (ConnectionTimeout, for instance).
+    kicked (``ConnectionTimeout``, for instance).
 
-    This function performs a semi-infinite loop, pausing for `pause` seconds
-    after each failed function call, up to a maximum of `nretries` retries.
+    This function performs a semi-infinite loop, pausing for ``pause`` seconds
+    after each failed function call, up to a maximum of ``nretries`` retries.
 
     Parameters
     ----------
-    func : `method`
+    func : :obj:`method`
         The Service connection method to be wrapped
-    pause : `int` or `float`, optional
+    pause : :obj:`int` or :obj:`float`, optional
         The number of seconds to wait in between retries to connect.
         [Default: 5]
-    nretries : `int`, optional
+    nretries : int, optional
         The total number of times to retry connecting before returning None
         [Default: 10]
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
 
     Returns
     -------
-    `Any`
-        The return value of `func` -- or None if unable to run `func`
+    Any
+        The return value of ``func`` -- or None if unable to run ``func``
     """
-    for i in range(1, nretries + 1):
 
+    # Now, for the actual function...
+    for i in range(1, nretries + 1):
         # Nominal function return
         try:
             return func(*args, **kwargs)
@@ -220,43 +207,117 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
         # This is a network error... retry
         except (
             ConnectionError,
-            TransportError,
+            google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
         ) as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
+            proper_print(
+                f"Execution of `{func.__name__}` failed because of network error."
+                f"\n{exception}",
+                "error",
+                logger,
             )
-            if (i := i + 1) <= nretries:
-                print(
-                    f"Waiting {pause} seconds before starting attempt #{i}/{nretries}"
+
+            if i < nretries:
+                proper_print(
+                    f"Waiting {pause} seconds before starting attempt #{i+1}/{nretries}",
+                    "info",
+                    logger,
                 )
                 time.sleep(pause)
             else:
-                raise ConnectionError(
-                    f"Could not connect to service after {nretries} attempts."
-                ) from exception
+                proper_print(
+                    f"Could not connect to service after {nretries} attempts.",
+                    "error",
+                    logger,
+                )
+                break
 
         # This is for a Service error (premissions, etc.), no retry
         except requests.exceptions.HTTPError as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
-                "\nAborting..."
+            proper_print(
+                f"Execution of `{func.__name__}` failed because of HTTP error."
+                f"\n{type(exception).__name__}  {exception.args}",
+                "error",
+                logger,
             )
+            proper_print("Aborting...", "except", logger)
+            raise exception
             break
 
-        # Gmail service error, no retry and pass the exception upward
-        except HttpError as exception:
-            warnings.warn(
-                f"Caught Gmail error... passing up.  {type(exception).__name__}"
+        # # Gmail service error, no retry and pass the exception upward
+        # except googleapiclient.errors.HttpError as exception:
+        #     proper_print(
+        #         f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}",
+        #         "except",
+        #         logger,
+        #     )
+        #     raise exception
+
+        # Slack service error, no retry and pass the exception upward
+        except slack_sdk.errors.SlackApiError as exception:
+            proper_print(
+                f"Caught Slack API error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
             )
             raise exception
 
-        # Slack service error, no retry and pass the exception upward
-        except SlackApiError as exception:
-            warnings.warn(
-                f"Caught Slack error... passing up.  {type(exception).__name__}"
+        # Confluence service error, no retry and pass the excepetion upward
+        except atlassian.errors.ApiError as exception:
+            proper_print(
+                f"Caught Atlassian API Error... passing up.  {type(exception).__name__}",
+                "except",
+                logger,
+            )
+            raise exception
+
+        # Google RefreshError occurs when the gmail_token.json to too old
+        except google.auth.exceptions.RefreshError as exception:
+            proper_print(
+                "Google Token Refresh Error.\n"
+                f"\tDescription: {exception.args[0]}\n"
+                "\tIf the reason is 'Token has been expired or revoked', then run\n"
+                "\t`j5_authenticate_gmail` to refresh the token.",
+                "error",
+                logger,
             )
             raise exception
 
     # If not successful, return None
     return None
+
+
+def proper_print(msg, level, logger=None):
+    """Log if logger, else print to stdout
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    msg : str
+        The message to convey
+    level : str
+        The logging level.  One of [``info``,``warn``,``except``]
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
+    """
+    if level == "info":
+        if logger is None:
+            print(msg)
+        else:
+            logger.info(msg)
+    elif level == "warn":
+        if logger is None:
+            warnings.warn(msg)
+        else:
+            logger.warning(msg)
+    elif level == "error":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.error(msg)
+    elif level == "except":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.exception(msg)
