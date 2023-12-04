@@ -292,7 +292,13 @@ class GetMessages:
 
         # The Body of the message is in Encrypted format -- decode it.
         #  Get the data and decode it with base 64 decoder.
-        data = payload["body"]["data"]
+
+        # If more than one part (i.e., HTML or images, etc.), get the first
+        data = (
+            payload["body"]["data"]
+            if "parts" not in payload
+            else payload["parts"][0]["body"]["data"]
+        )
         data = data.replace("-", "+").replace("_", "/")
         decoded_data = base64.b64decode(data)
 
