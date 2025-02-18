@@ -65,7 +65,7 @@ class ConfluencePage:
 
         # Set up the Confluence object instance
         self.confluence = (
-            setup_confluence(use_oauth=use_oauth, logger=self.logger)
+            setup_confluence(use_oauth=use_oauth)
             if not isinstance(instance, atlassian.Confluence)
             else instance
         )
@@ -399,9 +399,7 @@ class ConfluencePage:
 
 
 # Internal Functions =========================================================#
-def setup_confluence(
-    use_oauth: bool = False, logger: logging.Logger = None
-) -> atlassian.Confluence:
+def setup_confluence(use_oauth: bool = False) -> atlassian.Confluence:
     """Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
@@ -415,8 +413,6 @@ def setup_confluence(
     ----------
     use_oauth : :obj:`bool`, optional
         Use the OAUTH authentication scheme?  [Default: False]
-    logger : :obj:`~logging.Logger`, optional
-        The logger object for logging  [Default: None]
 
     Returns
     -------

@@ -23,6 +23,7 @@ import email.mime.base
 import email.mime.image
 import email.mime.multipart
 import email.mime.text
+import json
 import logging
 import mimetypes
 import os
@@ -221,7 +222,7 @@ class GetMessages:
             )
             return
 
-        self.label_id = self._lableId_from_labelName(label)
+        self.label_id = self._label_id_from_name(label)
         self.query = self.build_query(after_date=after, before_date=before)
 
         # Get the list of matching messages (API: users.messages.list)
@@ -341,10 +342,10 @@ class GetMessages:
         add_label_ids, remove_label_ids = [], []
         if add_labels:
             for label in add_labels:
-                add_label_ids.append(self._lableId_from_labelName(label))
+                add_label_ids.append(self._label_id_from_name(label))
         if remove_labels:
             for label in remove_labels:
-                remove_label_ids.append(self._lableId_from_labelName(label))
+                remove_label_ids.append(self._label_id_from_name(label))
 
         # Build the label dictionary to send to Gmail
         body = {}
@@ -372,7 +373,7 @@ class GetMessages:
         # If unsuccessful in connecting, raise
         raise johnnyfive.utils.J5Error("Unsuccessful connection")
 
-    def _lableId_from_labelName(self, name: str) -> str:
+    def _label_id_from_name(self, name: str) -> str:
         """Get the Label ID from the Label Name
 
         _extended_summary_
@@ -475,9 +476,14 @@ def setup_gmail(
     # Read in the credential token
     creds = None
     if os.path.exists(token_fn := johnnyfive.utils.Paths.gmail_token):
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_file(
-            token_fn, SCOPES
-        )
+        try:
+            creds = google.oauth2.credentials.Credentials.from_authorized_user_file(
+                token_fn, SCOPES
+            )
+        except json.decoder.JSONDecodeError as err:
+            raise johnnyfive.utils.J5Error(
+                f"Cannot parse Gmail token in {token_fn}"
+            ) from err
 
     # If there are no (valid) credentials available...
     if not creds or not creds.valid:
@@ -489,12 +495,12 @@ def setup_gmail(
                     google.auth.transport.requests.Request(),
                     logger=logger,
                 )
-            except (googleapiclient.errors.HttpError, ConnectionError) as error:
+            except (googleapiclient.errors.HttpError, ConnectionError) as err:
                 johnnyfive.utils.proper_print(
-                    f"An error occurred within setup_gmail(): {error}", "warn", logger
+                    f"An error occurred within setup_gmail(): {err}", "warn", logger
                 )
-            except google.auth.exceptions.RefreshError as error:
-                raise johnnyfive.utils.J5Error from error
+            except google.auth.exceptions.RefreshError as err:
+                raise johnnyfive.utils.J5Error from err
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -528,12 +534,12 @@ def setup_gmail(
     except (
         googleapiclient.errors.HttpError,
         googleapiclient.errors.UnknownApiNameOrVersion,
-    ) as error:
+    ) as err:
         # TODO(developer) - Handle errors from gmail API.
         johnnyfive.utils.proper_print(
-            f"An error occurred within setup_gmail():\n{error}", "except", logger
+            f"An error occurred within setup_gmail():\n{err}", "except", logger
         )
-        raise johnnyfive.utils.J5Error from error
+        raise johnnyfive.utils.J5Error from err
 
 
 def authenticate_gmail(logger: logging.Logger = None):
