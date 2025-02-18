@@ -23,6 +23,7 @@ import email.mime.base
 import email.mime.image
 import email.mime.multipart
 import email.mime.text
+import logging
 import mimetypes
 import os
 
@@ -54,30 +55,32 @@ class GmailMessage:
 
     Parameters
     ----------
-    toaddr : `str` or `list`
+    toaddr : :obj:`str` or :obj:`list`
         The intended recipient(s) of the email message
-    subject : `str`
+    subject : :obj:`str`
         The subject of the email message
-    message_text : `str`
+    message_text : :obj:`str`
         The body text of the email message (as a single string with optional
         newlines.)
-    fromname : `str`, optional
+    fromname : :obj:`str`, optional
         Display Name of the sender (i.e. which bot) [Default: None]
-    fromaddr : `str`, optional
+    fromaddr : :obj:`str`, optional
         Sender email address [Default: Value from [gmailSetup]]
-    logger : :obj:`logging.Logger`, optional
+    interactive : :obj:`bool`, optional
+        Whether to run this in interactive mode  (Default: False)
+    logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
     """
 
     def __init__(
         self,
-        toaddr,
-        subject,
-        message_text,
-        fromname=None,
-        fromaddr=None,
-        interactive=False,
-        logger=None,
+        toaddr: str | list,
+        subject: str,
+        message_text: str,
+        fromname: str = None,
+        fromaddr: str = None,
+        interactive: bool = False,
+        logger: logging.Logger = None,
     ):
         # Set the logger, if passed
         self.logger = logger
@@ -98,14 +101,14 @@ class GmailMessage:
         # Place the text into the message
         self.message.attach(email.mime.text.MIMEText(message_text))
 
-    def add_attachment(self, file):
+    def add_attachment(self, file: str):
         """Add an attachment to the GMAIL message
 
         _extended_summary_
 
         Parameters
         ----------
-        file : str
+        file : :obj:`str`
             Filename of the attachment
         """
         # For the attachment, guess the MIME type for reading it in
@@ -137,19 +140,14 @@ class GmailMessage:
         )
         self.message.attach(attachment)
 
-    def send(self):
+    def send(self) -> dict:
         """Send the GmailMessage
 
         _extended_summary_
 
-        Parameters
-        ----------
-        n_tries : `int`, optional
-            The number of retry attemps at sending this message  [Default: 5]
-
         Returns
         -------
-        `dict`
+        :obj:`dict`
             The sent message object
         """
         # Take the message object, and 64-bit encode it properly for sending
@@ -186,20 +184,27 @@ class GetMessages:
 
     Parameters
     ----------
-    label : str, optional
+    label : :obj:`str`, optional
         The Gmail label of messages to find [Default: None]
-    after : str, optional
+    after : :obj:`str`, optional
         Date after which to search for messages. Must be in YYYY/MM/DD format.
-        [Default: None]
-    before : str, optional
+        (Default: None)
+    before : :obj:`str`, optional
         Date before which to search for messages. Must be in YYYY/MM/DD format.
-        [Default: None]
+        (Default: None)
+    interactive : :obj:`bool`, optional
+        Whether to run this in interactive mode  (Default: False)
     logger : :obj:`logging.Logger`, optional
         The logger object for logging  [Default: None]
     """
 
     def __init__(
-        self, label=None, after=None, before=None, interactive=False, logger=None
+        self,
+        label: str = None,
+        after: str = None,
+        before: str = None,
+        interactive: bool = False,
+        logger: logging.Logger = None,
     ):
         # Initialize basic stuff
         self.label_list = None
@@ -242,7 +247,7 @@ class GetMessages:
                     self.logger,
                 )
 
-    def render_message(self, message_id):
+    def render_message(self, message_id: str) -> dict:
         """Retrieve and render a message by ID#
 
         Gmail mnessages are stored in a JSON-like structure that must be
@@ -250,12 +255,12 @@ class GetMessages:
 
         Parameters
         ----------
-        message_id : str
+        message_id : :obj:`str`
             The ``['id']`` field of an entry in self.message_list
 
         Returns
         -------
-        dict
+        :obj:`dict`
             Dictionary containing the subject, sender, date, and body of
             the message.
         """
@@ -279,7 +284,7 @@ class GetMessages:
 
         # Return empty dictionary if unsuccessful in connecting
         if not payload:
-            return dict(subject="", sender="", date="", body="")
+            return {"subject": "", "sender": "", "date": "", "body": ""}
 
         # Look for Subject and Sender Email in the headers
         for head_dict in headers:
@@ -307,30 +312,30 @@ class GetMessages:
         body = body[0].text
 
         # Return a dictionary with the plain-text components of this message
-        return dict(subject=subject, sender=sender, date=date, body=body)
+        return {"subject": subject, "sender": sender, "date": date, "body": body}
 
-    def update_msg_labels(self, message_id, add_labels=None, remove_labels=None):
+    def update_msg_labels(
+        self,
+        message_id: str,
+        add_labels: list[str] = None,
+        remove_labels: list[str] = None,
+    ):
         """Update the labels for a message by ID#
 
         _extended_summary_
 
         Parameters
         ----------
-        message_id : str
+        message_id : :obj:`str`
             The ``['id']`` field of an entry in self.message_list
-        add_labels : list, optional
+        add_labels : :obj:`list`, optional
             The list of label IDs to add to this message [Default: None]
-        remove_labels : list, optional
+        remove_labels : :obj:`list`, optional
             The list of label IDs to remove from this message [Default: None]
 
-        Returns
-        -------
-        Any
-            Uh, the Message object from Gmail... probably just return nothing?
         """
         if not add_labels and not remove_labels:
             johnnyfive.utils.proper_print("No labels to change.", "info", self.logger)
-            return None
 
         # Convert Label Names to Label IDs
         add_label_ids, remove_label_ids = [], []
@@ -367,19 +372,19 @@ class GetMessages:
         # If unsuccessful in connecting, raise
         raise johnnyfive.utils.J5Error("Unsuccessful connection")
 
-    def _lableId_from_labelName(self, name):
+    def _lableId_from_labelName(self, name: str) -> str:
         """Get the Label ID from the Label Name
 
         _extended_summary_
 
         Parameters
         ----------
-        name : str
+        name : :obj:`str`
             Label name
 
         Returns
         -------
-        str
+        :obj:`str`
             Label ID
         """
         if not self.service:
@@ -418,21 +423,21 @@ class GetMessages:
         return label_id
 
     @staticmethod
-    def build_query(after_date=None, before_date=None):
+    def build_query(after_date: str = None, before_date: str = None) -> str:
         """build_query Build the query string for users.messages.list
 
         _extended_summary_
 
         Parameters
         ----------
-        after_date : `str`
+        after_date : :obj:`str`
             Date after which to search for messages.
-        before_date : `str`
+        before_date : :obj:`str`
             Date before which to search for messages.
 
         Returns
         -------
-        `str`
+        :obj:`str`
             The appropriate query string
         """
         query = ""
@@ -444,7 +449,9 @@ class GetMessages:
 
 
 # Newer OAUTH Routines =======================================================#
-def setup_gmail(interactive=False, logger=None):
+def setup_gmail(
+    interactive: bool = False, logger: logging.Logger = None
+) -> googleapiclient.discovery.Resource:
     """Initialize the GMail API (via OAuth)
 
     [extended_summary]
@@ -454,15 +461,15 @@ def setup_gmail(interactive=False, logger=None):
 
     Parameters
     ----------
-    interactive : bool, optional
+    interactive : :obj:`bool`, optional
         Is this session interactive?  Relates to how to deal with toke
         refresh.  [Default: False]
-    logger : :obj:`logging.Logger`, optional
-        The logger object for logging  [Default: None]
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  (Default: None)
 
     Returns
     -------
-    :obj:`googleapiclient.discovery.Resource`
+    :obj:`~googleapiclient.discovery.Resource`
         The GMail API service object for consumption by other routines
     """
     # Read in the credential token
@@ -529,7 +536,7 @@ def setup_gmail(interactive=False, logger=None):
         raise johnnyfive.utils.J5Error from error
 
 
-def authenticate_gmail(logger=None):
+def authenticate_gmail(logger: logging.Logger = None):
     """Console Script for authenticating Gmail
 
     This is the command-line script for doing the interactive authentication
@@ -542,6 +549,10 @@ def authenticate_gmail(logger=None):
 
         j5_authenticate_gmail
 
+    Parameters
+    ----------
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  (Default: None)
     """
     johnnyfive.utils.proper_print("Authenticate GMail...", "info", logger)
     # Remove the existing GMAIL TOKEN file, if extant...

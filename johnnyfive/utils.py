@@ -19,14 +19,15 @@ the package.
 # Built-In Libraries
 import argparse
 from importlib import resources
+import logging
 import os
 import shutil
 import time
+import typing
 import warnings
 
 # 3rd Party Libraries
 import atlassian.errors
-import googleapiclient.errors
 import google.auth.exceptions
 import httplib2
 import requests
@@ -80,7 +81,7 @@ class authTarget(ligmos.utils.classes.baseTarget):
         self.tokenSecret = None
 
 
-def install_conffiles(args=None):
+def install_conffiles(args: object = None):
     """Console Script for installing configuration files
 
     This function is designed to install the (secret) configuration files
@@ -89,7 +90,7 @@ def install_conffiles(args=None):
 
     Parameters
     ----------
-    args : Any, optional
+    args : :obj:~`typing.Any`, optional
         The arguments passed from the command line [Default: None]
     """
     # Use argparse for the Command-Line Script
@@ -119,7 +120,9 @@ def install_conffiles(args=None):
             shutil.copy2(file, Paths.config)
 
 
-def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
+def read_ligmos_conffiles(
+    confname: str, conffile: str = "johnnyfive.conf"
+) -> ligmos.utils.classes.baseTarget:
     """Read a configuration file using LIGMOS
 
     Having this as a separate function may be a bit of an overkill, but it
@@ -128,14 +131,14 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
 
     Parameters
     ----------
-    confname : str
+    confname : :obj:`str`
         Name of the table within the configuration file to parse
-    conffile : str
+    conffile : :obj:`str`
         Name of the configuration file to parse
 
     Returns
     -------
-    :class:`ligmos.utils.classes.baseTarget`
+    :class:`~ligmos.utils.classes.baseTarget`
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
@@ -146,7 +149,7 @@ def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
     return ligconf
 
 
-def print_dict(dd, indent=0, di=4):
+def print_dict(dd: dict, indent: int = 0, di: int = 4):
     """Print a dictionary in tree format
 
     You know how sometimes you get these nested dictionaries, and they're a
@@ -158,11 +161,11 @@ def print_dict(dd, indent=0, di=4):
 
     Parameters
     ----------
-    dd : dict
+    dd : :obj:`dict`
         The dictionary to print
-    indent : int, optional
+    indent : :obj:`int`, optional
         The initial indentation for the tree [Default: 0]
-    di: int, optional
+    di: :obj:`int`, optional
         The incremental indentation for each layer of the tree [Default: 4]
     """
     if not isinstance(dd, dict):
@@ -178,7 +181,14 @@ def print_dict(dd, indent=0, di=4):
             print(f"{' '*indent}{key:12s}: {value}")
 
 
-def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs):
+def safe_service_connect(
+    func: typing.Callable,
+    *args,
+    pause: int | float = 5,
+    nretries: int = 5,
+    logger: logging.Logger = None,
+    **kwargs,
+) -> object:
     """Safely connect to Service (includes error-catching)
 
     Wrapper for Service-connection functions to catch errors that might be
@@ -189,20 +199,20 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
 
     Parameters
     ----------
-    func : :obj:`method`
+    func : :obj:`~typing.Callable`
         The Service connection method to be wrapped
     pause : :obj:`int` or :obj:`float`, optional
         The number of seconds to wait in between retries to connect.
         [Default: 5]
-    nretries : int, optional
+    nretries : :obj:`int`, optional
         The total number of times to retry connecting before returning None
         [Default: 10]
-    logger : :obj:`logging.Logger`, optional
+    logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
 
     Returns
     -------
-    Any
+    :obj:`~typing.Any`
         The return value of ``func`` -- or None if unable to run ``func``
     """
 
@@ -250,7 +260,6 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
             )
             proper_print("Aborting...", "except", logger)
             raise exception
-            break
 
         # # Gmail service error, no retry and pass the exception upward
         # except googleapiclient.errors.HttpError as exception:
@@ -295,18 +304,18 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
     raise J5Error("Unspecified error")
 
 
-def proper_print(msg, level, logger=None):
+def proper_print(msg: str, level: str, logger: logging.Logger = None):
     """Log if logger, else print to stdout
 
     _extended_summary_
 
     Parameters
     ----------
-    msg : str
+    msg : :obj:`str`
         The message to convey
-    level : str
+    level : ;obj:`str`
         The logging level.  One of [``info``,``warn``,``except``]
-    logger : :obj:`logging.Logger`, optional
+    logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
     """
     if level == "info":

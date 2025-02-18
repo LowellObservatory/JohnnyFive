@@ -18,10 +18,12 @@ TODO: Properly deal with possible error states (try/except blocks)
 """
 
 # Built-In Libraries
+import pathlib
 import warnings
 
 # 3rd Party Libraries
 import slack_sdk
+import slack_sdk.errors
 
 # Internal Imports
 import johnnyfive.utils
@@ -38,29 +40,29 @@ class SlackChannel:
 
     Parameters
     ----------
-    channel_name : `str`
+    channel_name : :obj:`str`
         Slack Channel into which to post
     """
 
-    def __init__(self, channel_name):
+    def __init__(self, channel_name: str):
         self.client = setup_slack()
 
         # Get the channel ID
         self.channel_id = self._read_channels(channel_name)
 
-    def send_message(self, message):
-        """send_message Send a (text only) message to the channel
+    def send_message(self, message: str) -> object:
+        """Send a (text only) message to the channel
 
         _extended_summary_
 
         Parameters
         ----------
-        message : `str` or `blocks[]` array
+        message : :obj:`str` or `blocks[]` array
             The message to send to the Slack channel
 
         Returns
         -------
-        `Any`
+        :obj:`~typing.Any`
             The response from Slack
         """
         response = None
@@ -80,21 +82,21 @@ class SlackChannel:
             )
         return response
 
-    def upload_file(self, file, title=None):
-        """upload_file Upload a file to the channel
+    def upload_file(self, file: str | pathlib.Path, title: str = None):
+        """Upload a file to the channel
 
         _extended_summary_
 
         Parameters
         ----------
-        file : `str` or `os.PathLike`
+        file : :obj:`str` or :obj:`~pathlib.Path`
             The (path and) filename of the file to be uploaded.
-        title : `str`, optional
-            The title for the file posted [Default: None]
+        title : :obj:`str`, optional
+            The title for the file posted  (Default: None)
 
         Returns
         -------
-        `Any`
+        :obj:`~typing.Any`
             The response from Slack
         """
         response = None
@@ -111,17 +113,17 @@ class SlackChannel:
             )
         return response
 
-    def _read_channels(self, name):
-        """_read_channels Return the Channel ID for the names channel
+    def _read_channels(self, name: str) -> str:
+        """Return the Channel ID for the names channel
 
         Parameters
         ----------
-        name : `str`
+        name : :obj:`str`
             The name of the channel
 
         Returns
         -------
-        `str`
+        :obj:`str`
             The desired Channel ID
         """
         conversation_id = None
@@ -149,17 +151,15 @@ class SlackChannel:
 
 
 # Internal Functions =========================================================#
-def setup_slack(logger=None):
-    """setup_slack Setup the Slack WebClient for posting
+def setup_slack() -> slack_sdk.web.client.WebClient:
+    """Setup the Slack WebClient for posting
 
     _extended_summary_
 
     Returns
     -------
-    client : `slack_sdk.web.client.WebClient`
+    client : :obj:`~slack_sdk.web.client.WebClient`
         The WebClient object needed for reading and writing
-    logger : :obj:`logging.Logger`, optional
-        The logger object for logging  [Default: None]
     """
     # Read the setup
     setup = johnnyfive.utils.read_ligmos_conffiles("slackSetup")

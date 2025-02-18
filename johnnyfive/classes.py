@@ -17,6 +17,8 @@ from __future__ import division, print_function, absolute_import
 
 
 class emailSNMP(object):
+    """emailSNMP _summary_"""
+
     def __init__(self):
         self.host = None
         self.port = 465

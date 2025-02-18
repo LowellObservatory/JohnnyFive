@@ -15,6 +15,7 @@ Confluence API Documentation:
 """
 
 # Built-In Libraries
+import logging
 
 # 3rd Party Libraries
 import atlassian
@@ -35,21 +36,28 @@ class ConfluencePage:
 
     Parameters
     ----------
-    space : str
+    space : :obj:`str`
         The name of the Confluence space for this page
-    page_title : str
+    page_title : :obj:`str`
         The page title
-    instance : :class:`atlassian.Confluence`, optional
+    instance : :class:`~atlassian.Confluence`, optional
         An existing Confluence object instance to be used instead of
         reinstantiating a new Confluence object for communication and
         authentication.  [Default: None]
-    use_oauth : bool, optional
+    use_oauth : :obj:`bool`, optional
         Use OAUTH authentication instead of username/password?  [Default: False]
-    logger : :obj:`logging.Logger`, optional
+    logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
     """
 
-    def __init__(self, space, page_title, instance=None, use_oauth=False, logger=None):
+    def __init__(
+        self,
+        space: str,
+        page_title: str,
+        instance: atlassian.Confluence = None,
+        use_oauth: bool = False,
+        logger: logging.Logger = None,
+    ):
         # Initialize instance variables
         self.space = space
         self.title = page_title
@@ -66,7 +74,7 @@ class ConfluencePage:
         # Set the class metadata based on this page
         self._set_metadata()
 
-    def add_comment(self, comment):
+    def add_comment(self, comment: str):
         """Add a comment to the Confluence page
 
         Sometimes it's helpful to include a comment at the bottom of the
@@ -75,7 +83,7 @@ class ConfluencePage:
 
         Parameters
         ----------
-        comment : str
+        comment : :obj:`str`
             The comment to be left on the page.
         """
         if not self._check_perm("COMMENT", "add a comment"):
@@ -85,7 +93,7 @@ class ConfluencePage:
             self.confluence.add_comment, self.page_id, comment, logger=self.logger
         )
 
-    def add_label(self, label):
+    def add_label(self, label: str):
         """Add a label to the Confluence page
 
         Sometimes it's helpful to have a label on a Confluence page for
@@ -93,7 +101,7 @@ class ConfluencePage:
 
         Parameters
         ----------
-        label : `str`
+        label : :obj:`str`
             The label to be added to the page
         """
         if not self._check_perm("EDITSPACE", "add a label"):
@@ -103,7 +111,13 @@ class ConfluencePage:
             self.confluence.set_page_label, self.page_id, label, logger=self.logger
         )
 
-    def attach_file(self, filename, name=None, content_type=None, comment=None):
+    def attach_file(
+        self,
+        filename: str,
+        name: str = None,
+        content_type: str = None,
+        comment: str = None,
+    ):
         """Attach a file to this page
 
         Wrapper for the Confluence method attach_file() that includes the
@@ -111,13 +125,13 @@ class ConfluencePage:
 
         Parameters
         ----------
-        filename : str
+        filename : :obj:`str`
             Filename of the attachment
-        name : str, optional
+        name : :obj:`str`, optional
             Display name for this attachment [Default: None]
-        content_type : str, optional
+        content_type : :obj:`str`, optional
             MIME content type [Default: None]
-        comment : str, optional
+        comment : :obj:`str`, optional
             Additional comment or description to be included [Default: None]
         """
         if not self._check_perm("CREATEATTACHMENT", "create an attachment"):
@@ -133,19 +147,21 @@ class ConfluencePage:
             logger=self.logger,
         )
 
-    def create(self, page_body, parent_id=None, representation="wiki"):
+    def create(
+        self, page_body: str, parent_id: str = None, representation: str = "wiki"
+    ):
         """Create a brand new Confluence page
 
         Summon from the depths of computing a new page.
 
         Parameters
         ----------
-        page_body : str
+        page_body : :obj:`str`
             The body of the new Confluence page.
-        parent_id : str, optional
+        parent_id : :obj:`str`, optional
             The parent page to place this under.  If none given, the new page
             will be created at the root of ``self.space``. [Default: None]
-        representation : str, optional
+        representation : :obj:`str`, optional
             The Confluence strorage representation to use.  [Default: "wiki"]
             Use "storage" for XML-based documents
         """
@@ -172,7 +188,7 @@ class ConfluencePage:
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
 
-    def delete_attachment(self, filename):
+    def delete_attachment(self, filename: str):
         """Delete an attachment from this page
 
         Wrapper for the Confluence method delete_attachment() that includes the
@@ -183,7 +199,7 @@ class ConfluencePage:
 
         Parameters
         ----------
-        filename : str
+        filename : :obj:`str`
             Filename of the attachment to delete
         """
         if not self._check_perm("REMOVEATTACHMENT", "remove an attachment"):
@@ -196,19 +212,19 @@ class ConfluencePage:
             logger=self.logger,
         )
 
-    def get_page_attachments(self, limit=200):
+    def get_page_attachments(self, limit: int = 200) -> list[object]:
         """Retrieve the page attachments
 
         Return a list of page attachment IDs, up to ``limit`` in length.
 
         Parameters
         ----------
-        limit : int, optional
-            The number of attachments to return [Default: 200]
+        limit : :obj:`int`, optional
+            The number of attachments to return  (Default: 200)
 
         Returns
         -------
-        list
+        :obj:`list`
             List of Confluence attachment IDs
         """
         return johnnyfive.utils.safe_service_connect(
@@ -218,7 +234,7 @@ class ConfluencePage:
             logger=self.logger,
         )
 
-    def get_page_contents(self):
+    def get_page_contents(self) -> str:
         """Retrieve the page contents in HTML-ish format
 
         Either for curiosity or for modification, get the page contents, which
@@ -226,7 +242,7 @@ class ConfluencePage:
 
         Returns
         -------
-        str
+        :obj:`str`
             The HTML-ish body of the confluence page.
         """
         contents = johnnyfive.utils.safe_service_connect(
@@ -252,7 +268,7 @@ class ConfluencePage:
         )
         self._set_metadata()
 
-    def update_contents(self, body):
+    def update_contents(self, body: str):
         """Update the contents of the Confluence page
 
         Update the page by replacing the existing content with new.  The idea
@@ -261,7 +277,7 @@ class ConfluencePage:
 
         Parameters
         ----------
-        body : str
+        body : :obj:`str`
             The new page contents to upload to Confluence.
         """
         if not self._check_perm("EDITSPACE", "update a page"):
@@ -275,7 +291,7 @@ class ConfluencePage:
             logger=self.logger,
         )
 
-    def _check_perm(self, perm_key, perm_action):
+    def _check_perm(self, perm_key: str, perm_action: str) -> bool:
         """Check the premissions dictionary for a particular action
 
         Check the ``perm_key`` in the permissions dictionary to see whether the
@@ -289,14 +305,14 @@ class ConfluencePage:
 
         Parameters
         ----------
-        perm_key : str
+        perm_key : :obj:`str`
             The key in perm_dict to look for
-        perm_action : str
+        perm_action : :obj:`str`
             The action that is requested by the calling function.
 
         Returns
         -------
-        bool
+        :obj:`bool`
             True for perform action, False for not
         """
         perm_val = self.space_perms.get(perm_key, None)
@@ -345,7 +361,7 @@ class ConfluencePage:
             else f"{self.confluence.url}download/attachments/{self.page_id}/"
         )
 
-    def _set_permdict(self):
+    def _set_permdict(self) -> dict:
         """Create a dictionary of permissions
 
         This method creates a dictionary of permissions for this user in this
@@ -354,7 +370,7 @@ class ConfluencePage:
 
         Returns
         -------
-        dict
+        :obj:`dict`
             The dictionary of permissions (boolean)
         """
         perms = johnnyfive.utils.safe_service_connect(
@@ -383,7 +399,9 @@ class ConfluencePage:
 
 
 # Internal Functions =========================================================#
-def setup_confluence(use_oauth=False, logger=None):
+def setup_confluence(
+    use_oauth: bool = False, logger: logging.Logger = None
+) -> atlassian.Confluence:
     """Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
@@ -395,14 +413,14 @@ def setup_confluence(use_oauth=False, logger=None):
 
     Parameters
     ----------
-    use_oauth : bool, optional
+    use_oauth : :obj:`bool`, optional
         Use the OAUTH authentication scheme?  [Default: False]
-    logger : :obj:`logging.Logger`, optional
+    logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
 
     Returns
     -------
-    confluence : :class:`atlassian.Confluence`
+    confluence : :class:`~atlassian.Confluence`
         Confluence class, initialized with credentials
     """
     # Read the setup
