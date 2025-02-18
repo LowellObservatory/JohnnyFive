@@ -69,7 +69,7 @@ class SlackChannel:
             response = johnnyfive.utils.safe_service_connect(
                 self.client.chat_postMessage,
                 channel=self.channel_id,
-                text=message
+                text=message,
                 # You could also use a blocks[] array to send richer content
             )
             # Print result, which includes information about the message (like TS)

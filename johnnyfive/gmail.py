@@ -176,7 +176,7 @@ class GmailMessage:
                 "except",
                 self.logger,
             )
-            return None
+            raise johnnyfive.utils.J5Error from error
 
 
 class GetMessages:
@@ -364,8 +364,8 @@ class GetMessages:
                 "except",
                 self.logger,
             )
-        # If unsuccessful in connecting, return None
-        return None
+        # If unsuccessful in connecting, raise
+        raise johnnyfive.utils.J5Error("Unsuccessful connection")
 
     def _lableId_from_labelName(self, name):
         """Get the Label ID from the Label Name
@@ -487,7 +487,7 @@ def setup_gmail(interactive=False, logger=None):
                     f"An error occurred within setup_gmail(): {error}", "warn", logger
                 )
             except google.auth.exceptions.RefreshError as error:
-                return None
+                raise johnnyfive.utils.J5Error from error
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -507,13 +507,13 @@ def setup_gmail(interactive=False, logger=None):
                 "error",
                 logger,
             )
-            return None
+            raise johnnyfive.utils.J5Error
 
         # Save the credentials for the next run
         with open(token_fn, "w", encoding="utf-8") as token:
             token.write(creds.to_json())
 
-    # Try building the GMail API service.  If error, print error & return None
+    # Try building the GMail API service.  If error, print error & raise
     try:
         # Call the Gmail API
         johnnyfive.utils.proper_print("Calling the GMAIL API...", "info", logger)
@@ -526,7 +526,7 @@ def setup_gmail(interactive=False, logger=None):
         johnnyfive.utils.proper_print(
             f"An error occurred within setup_gmail():\n{error}", "except", logger
         )
-        return None
+        raise johnnyfive.utils.J5Error from error
 
 
 def authenticate_gmail(logger=None):

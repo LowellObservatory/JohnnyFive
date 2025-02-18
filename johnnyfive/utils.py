@@ -42,6 +42,14 @@ import ligmos
 __all__ = ["safe_service_connect", "print_dict", "proper_print"]
 
 
+# Define error classes
+class J5Error(Exception):
+    """J5Error Class
+
+    Base JohnnyFive error class
+    """
+
+
 # Classes to hold useful information
 class Paths:
     """Paths
@@ -283,8 +291,8 @@ def safe_service_connect(func, *args, pause=5, nretries=5, logger=None, **kwargs
             )
             raise exception
 
-    # If not successful, return None
-    return None
+    # If not successful, raise error
+    raise J5Error("Unspecified error")
 
 
 def proper_print(msg, level, logger=None):
