@@ -500,7 +500,11 @@ def setup_gmail(
                     f"An error occurred within setup_gmail(): {err}", "warn", logger
                 )
             except google.auth.exceptions.RefreshError as err:
-                raise johnnyfive.utils.J5Error from err
+                raise johnnyfive.utils.J5Error(
+                    f"{type(err).__name__} {err}\n"
+                    "https://stackoverflow.com/questions/10576386/invalid-grant-trying-to-get-oauth-token-from-google\n"
+                    "Try running j5_authenticate_gmail"
+                ) from err
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
@@ -512,15 +516,18 @@ def setup_gmail(
 
         # Otherwise, raise an exception and specify to run interactively
         else:
-            johnnyfive.utils.proper_print(
+            errmsg = (
                 "No Gmail credentials found.  You may need to run:\n"
                 "\t`j5_install_conf`\n"
                 "\tor to authenticate user, run (NOT in a container):\n"
-                "\t`j5_authenticate_gmail`",
+                "\t`j5_authenticate_gmail`"
+            )
+            johnnyfive.utils.proper_print(
+                errmsg,
                 "error",
                 logger,
             )
-            raise johnnyfive.utils.J5Error
+            raise johnnyfive.utils.J5Error(errmsg)
 
         # Save the credentials for the next run
         with open(token_fn, "w", encoding="utf-8") as token:
