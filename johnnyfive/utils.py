@@ -40,7 +40,7 @@ import ligmos
 
 
 # Set API Components
-__all__ = ["safe_service_connect", "print_dict", "proper_print"]
+__all__ = ["safe_service_connect", "print_dict", "proper_print", "J5Error"]
 
 
 # Define error classes
@@ -142,11 +142,24 @@ def read_ligmos_conffiles(
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
-    ligconf = ligmos.utils.confparsers.rawParser(os.path.join(Paths.config, conffile))
-    ligconf = ligmos.workers.confUtils.assignConf(
-        ligconf[confname], authTarget, backfill=True
-    )
-    return ligconf
+    try:
+        ligconf = ligmos.utils.confparsers.rawParser(
+            os.path.join(Paths.config, conffile)
+        )
+        ligconf = ligmos.workers.confUtils.assignConf(
+            ligconf[confname], authTarget, backfill=True
+        )
+        return ligconf
+    except KeyError as err:
+        raise J5Error(
+            f"Configuration key {confname} not present.\n"
+            "Try installing configuration files via j5 utilities."
+        ) from err
+    except Exception as err:
+        raise J5Error(
+            "Unexpected error occurred while reading in configuration file.\n"
+            f"\n{type(err).__name__}  {err.args}"
+        )
 
 
 def print_dict(dd: dict, indent: int = 0, di: int = 4):
@@ -227,10 +240,10 @@ def safe_service_connect(
             ConnectionError,
             google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
-        ) as exception:
+        ) as err:
             proper_print(
                 f"Execution of `{func.__name__}` failed because of network error."
-                f"\n{exception}",
+                f"\n{err}",
                 "error",
                 logger,
             )
@@ -251,15 +264,15 @@ def safe_service_connect(
                 break
 
         # This is for a Service error (premissions, etc.), no retry
-        except requests.exceptions.HTTPError as exception:
+        except requests.exceptions.HTTPError as err:
             proper_print(
                 f"Execution of `{func.__name__}` failed because of HTTP error."
-                f"\n{type(exception).__name__}  {exception.args}",
+                f"\n{type(err).__name__}  {err.args}",
                 "error",
                 logger,
             )
             proper_print("Aborting...", "except", logger)
-            raise exception
+            raise err
 
         # # Gmail service error, no retry and pass the exception upward
         # except googleapiclient.errors.HttpError as exception:
@@ -271,34 +284,34 @@ def safe_service_connect(
         #     raise exception
 
         # Slack service error, no retry and pass the exception upward
-        except slack_sdk.errors.SlackApiError as exception:
+        except slack_sdk.errors.SlackApiError as err:
             proper_print(
-                f"Caught Slack API error... passing up.  {type(exception).__name__}",
+                f"Caught Slack API error... passing up.  {type(err).__name__}",
                 "except",
                 logger,
             )
-            raise exception
+            raise err
 
         # Confluence service error, no retry and pass the excepetion upward
-        except atlassian.errors.ApiError as exception:
+        except atlassian.errors.ApiError as err:
             proper_print(
-                f"Caught Atlassian API Error... passing up.  {type(exception).__name__}",
+                f"Caught Atlassian API Error... passing up.  {type(err).__name__}",
                 "except",
                 logger,
             )
-            raise exception
+            raise err
 
         # Google RefreshError occurs when the gmail_token.json to too old
-        except google.auth.exceptions.RefreshError as exception:
+        except google.auth.exceptions.RefreshError as err:
             proper_print(
                 "Google Token Refresh Error.\n"
-                f"\tDescription: {exception.args[0]}\n"
+                f"\tDescription: {err.args[0]}\n"
                 "\tIf the reason is 'Token has been expired or revoked', then run\n"
                 "\t`j5_authenticate_gmail` to refresh the token.",
                 "error",
                 logger,
             )
-            raise exception
+            raise err
 
     # If not successful, raise error
     raise J5Error("Unspecified error")
