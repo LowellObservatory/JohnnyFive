@@ -18,6 +18,7 @@ the package.
 
 # Built-In Libraries
 import argparse
+import dataclasses
 from importlib import resources
 import logging
 import os
@@ -52,6 +53,7 @@ class J5Error(Exception):
 
 
 # Classes to hold useful information
+@dataclasses.dataclass
 class Paths:
     """Paths
 
@@ -65,6 +67,7 @@ class Paths:
     gmail_creds = config / "gmail_credentials.json"
 
 
+@dataclasses.dataclass
 class authTarget(ligmos.utils.classes.baseTarget):
     """Extension of LIGMOS baseTarget class
 
@@ -159,7 +162,7 @@ def read_ligmos_conffiles(
         raise J5Error(
             "Unexpected error occurred while reading in configuration file.\n"
             f"\n{type(err).__name__}  {err.args}"
-        )
+        ) from err
 
 
 def print_dict(dd: dict, indent: int = 0, di: int = 4):
@@ -238,8 +241,10 @@ def safe_service_connect(
         # This is a network error... retry
         except (
             ConnectionError,
+            TimeoutError,
             google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
+            requests.exceptions.ReadTimeout,
         ) as err:
             proper_print(
                 f"Execution of `{func.__name__}` failed because of network error."
