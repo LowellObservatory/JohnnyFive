@@ -18,10 +18,11 @@ the package.
 
 # Built-In Libraries
 import argparse
+import configparser
 import dataclasses
 from importlib import resources
 import logging
-import os
+import pathlib
 import shutil
 import time
 import typing
@@ -33,9 +34,6 @@ import google.auth.exceptions
 import httplib2
 import requests
 import slack_sdk.errors
-
-# Lowell Libraries
-import ligmos
 
 # Internal Imports
 
@@ -68,7 +66,25 @@ class Paths:
 
 
 @dataclasses.dataclass
-class authTarget(ligmos.utils.classes.baseTarget):
+class baseTarget:
+    """
+    Empty class that gets inherited by basically everything since it contains
+    most/all the usual stuff you'd need to connect to a ... thing.
+    """
+
+    def __init__(self):
+        self.name = None
+        self.host = None
+        self.port = 22
+        self.type = None
+        self.user = None
+        self.protocol = None
+        self.password = None
+        self.enabled = False
+
+
+@dataclasses.dataclass
+class authTarget(baseTarget):
     """Extension of LIGMOS baseTarget class
 
     Adds specified attributes used in JohnnyFive to silence LIGMOS's
@@ -82,6 +98,63 @@ class authTarget(ligmos.utils.classes.baseTarget):
         self.apiSecret = None
         self.tokenKey = None
         self.tokenSecret = None
+
+
+def assignConf(conf, obj, backfill=False, debug=False):
+    """
+    Given an arbitrary class reference and a parsed configuration file (conf),
+    assign keys from the latter into parameters in the former.
+
+    Assumes that ALL keys in the class are present in the configuration; if
+    they aren't, then they're set to ```None``` and caught/announced in the
+    ```KeyError``` exception below.
+
+    If 'backfill' is False, parameters that are in the *configuration file*
+    but not in the given class are *ignored* completely.  If True,
+    they're added to the given class with a warning.
+    """
+    # Make an instance of our given object/class
+    classy = obj()
+
+    # Get the list of parameters in the instance (classy) given class (obj)
+    oparams = list(classy.__dict__.keys())
+
+    # Now do the same for the configuration object (conf)
+    cparams = list(conf.keys())
+
+    # Check to see if there are any that are in the class but not in the conf
+    #   If there are, keydiffs will != [] and they'll be shoved into the class
+    #   with a warning if backfill is True, otherwise they're ignored entirely
+    keydiffs = list(set(cparams) - set(oparams))
+
+    for key in classy.__dict__:
+        try:
+            # Remember: key is from the input class here
+            kval = conf[key]
+
+            # Check to see if it's a comma-separated-list, and other parsing
+            #   stuff happens to check for none/true/false
+            nkval = valChecks(kval)
+
+            # Actually set the parameter (key) in the class (classy)
+            #   to the value that we found/cleaned up (nkval)
+            setattr(classy, key, nkval)
+        except KeyError:
+            # This means that
+            if debug is True:
+                print("Missing expected configuration key %s" % (key))
+            # Just set it to None and move on with our lives
+            setattr(classy, key, None)
+
+    if backfill is True:
+        # If there are any, that is
+        if keydiffs != []:
+            for orphan in keydiffs:
+                orphVal = valChecks(conf[orphan])
+                print("Setting orphan object key %s to %s" % (orphan, orphVal))
+                setattr(classy, orphan, orphVal)
+
+    return classy
 
 
 def install_conffiles(args: object = None):
@@ -113,7 +186,7 @@ def install_conffiles(args: object = None):
     # Now, loop through the files privided
     for file in res.files:
         # Skip things that aren't files
-        if not isinstance(file, str) or not os.path.isfile(file):
+        if not isinstance(file, str) or not pathlib.Path(file).is_file():
             print(f"Argument {file} is not a file... skipping.")
             continue
 
@@ -125,7 +198,7 @@ def install_conffiles(args: object = None):
 
 def read_ligmos_conffiles(
     confname: str, conffile: str = "johnnyfive.conf"
-) -> ligmos.utils.classes.baseTarget:
+) -> baseTarget:
     """Read a configuration file using LIGMOS
 
     Having this as a separate function may be a bit of an overkill, but it
@@ -141,17 +214,13 @@ def read_ligmos_conffiles(
 
     Returns
     -------
-    :class:`~ligmos.utils.classes.baseTarget`
+    :class:`baseTarget`
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
     try:
-        ligconf = ligmos.utils.confparsers.rawParser(
-            os.path.join(Paths.config, conffile)
-        )
-        ligconf = ligmos.workers.confUtils.assignConf(
-            ligconf[confname], authTarget, backfill=True
-        )
+        ligconf = rawParser(Paths.config / conffile)
+        ligconf = assignConf(ligconf[confname], authTarget, backfill=True)
         return ligconf
     except KeyError as err:
         raise J5Error(
@@ -195,6 +264,58 @@ def print_dict(dd: dict, indent: int = 0, di: int = 4):
             print_dict(value, indent + di)
         else:
             print(f"{' '*indent}{key:12s}: {value}")
+
+
+def proper_print(msg: str, level: str, logger: logging.Logger = None):
+    """Log if logger, else print to stdout
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    msg : :obj:`str`
+        The message to convey
+    level : ;obj:`str`
+        The logging level.  One of [``info``,``warn``,``except``]
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  [Default: None]
+    """
+    if level == "info":
+        if logger is None:
+            print(msg)
+        else:
+            logger.info(msg)
+    elif level == "warn":
+        if logger is None:
+            warnings.warn(msg)
+        else:
+            logger.warning(msg)
+    elif level == "error":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.error(msg)
+    elif level == "except":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.exception(msg)
+
+
+def rawParser(confname):
+    """
+    A simple minded parsing of the given confname file.
+    Returns a configparser object.
+    """
+    config = None
+    try:
+        config = configparser.ConfigParser()
+        config.read_file(open(confname, "r"))
+    except IOError as err:
+        print("ERROR: Configuration file %s not found!" % (confname))
+        print(str(err))
+
+    return config
 
 
 def safe_service_connect(
@@ -322,37 +443,37 @@ def safe_service_connect(
     raise J5Error("Unspecified error")
 
 
-def proper_print(msg: str, level: str, logger: logging.Logger = None):
-    """Log if logger, else print to stdout
+def valChecks(kval):
+    """ """
+    # It'll always be a string by this point, so it should always
+    #   have a .split() method.  If not, someone else has mucked about
+    #   with the configuration object before it got here.
+    kval = kval.strip().split(",")
 
-    _extended_summary_
+    # Trim off leading/trailing whitespace for each. Also make sure
+    #    that it's a list, no matter what, so we can itterate over it.
+    kval = [kv.strip() for kv in kval]
 
-    Parameters
-    ----------
-    msg : :obj:`str`
-        The message to convey
-    level : ;obj:`str`
-        The logging level.  One of [``info``,``warn``,``except``]
-    logger : :obj:`~logging.Logger`, optional
-        The logger object for logging  [Default: None]
-    """
-    if level == "info":
-        if logger is None:
-            print(msg)
+    # kval is now definitely a list
+    allval = []
+    for val in kval:
+        # Some icky type checks
+        if val.lower() == "none":
+            nkval = None
+        elif val.lower() == "false":
+            nkval = False
+        elif val.lower() == "true":
+            nkval = True
         else:
-            logger.info(msg)
-    elif level == "warn":
-        if logger is None:
-            warnings.warn(msg)
-        else:
-            logger.warning(msg)
-    elif level == "error":
-        if logger is None:
-            warnings.warn(f"EXCEPTION: {msg}")
-        else:
-            logger.error(msg)
-    elif level == "except":
-        if logger is None:
-            warnings.warn(f"EXCEPTION: {msg}")
-        else:
-            logger.exception(msg)
+            nkval = val
+        # Put it into a list in case there's more than one
+        allval.append(nkval)
+
+    # If there's just one thing that we found, return it alone. Otherwise
+    #   return the full list of stuff
+    if len(allval) == 1:
+        nkval = allval[0]
+    else:
+        nkval = allval
+
+    return nkval

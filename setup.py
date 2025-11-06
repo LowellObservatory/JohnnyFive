@@ -102,8 +102,9 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
     ],
 
     # This field adds keywords for your project which will appear on the
@@ -138,8 +139,7 @@ setup(
                       'pyjwt',
                       'python-twitter',
                       'requests',
-                      'slack_sdk',
-                      'ligmos @ git+https://github.com/LowellObservatory/ligmos'],
+                      'slack_sdk'],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
