@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 14-Feb-2022
 #
@@ -18,57 +16,87 @@ the package.
 
 # Built-In Libraries
 import argparse
-import os
+import configparser
+import dataclasses
+from importlib import resources
+import logging
+import pathlib
 import shutil
 import time
+import typing
 import warnings
 
 # 3rd Party Libraries
-from googleapiclient.errors import HttpError
-from google.auth.exceptions import TransportError
+import atlassian.errors
+import google.auth.exceptions
 import httplib2
-from pkg_resources import resource_filename
 import requests
-from slack_sdk.errors import SlackApiError
-
-# Lowell Libraries
-import ligmos
+import slack_sdk.errors
 
 # Internal Imports
 
 
 # Set API Components
-__all__ = ["PermissionWarning", "print_dict", "safe_service_connect"]
+__all__ = [
+    "J5Error",
+    "print_dict",
+    "proper_print",
+    "read_config_section",
+    "safe_service_connect",
+]
 
 
-class PermissionWarning(UserWarning):
-    """PermissionWarning
-    Subclass of UserWarning that is more specific to the case of permissions
+# Define error classes
+class J5Error(Exception):
+    """J5Error Class
+
+    Base JohnnyFive error class
     """
 
 
 # Classes to hold useful information
+@dataclasses.dataclass
 class Paths:
     """Paths
 
-    [extended_summary]
+    Centralizes paths to packaged configuration and image resources.
     """
 
     # Main data & config directories
-    config = resource_filename("johnnyfive", "config")
-    images = resource_filename("johnnyfive", "images")
-    gmail_token = os.path.join(config, "gmail_token.json")
-    gmail_creds = os.path.join(config, "gmail_credentials.json")
+    config = resources.files("johnnyfive") / "config"
+    images = resources.files("johnnyfive") / "images"
+    gmail_token = config / "gmail_token.json"
+    gmail_creds = config / "gmail_credentials.json"
 
 
-class authTarget(ligmos.utils.classes.baseTarget):
-    """authTarget Extension of LIGMOS baseTarget
-
-    Adds specified attributes used in JohnnyFive to silence LIGMOS's
-    "Setting orphan object key" messages
+@dataclasses.dataclass
+class baseTarget:
+    """
+    Empty class that gets inherited by basically everything since it contains
+    most/all the usual stuff you'd need to connect to a ... thing.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize a configuration target with common connection fields."""
+        self.name = None
+        self.host = None
+        self.port = 22
+        self.type = None
+        self.user = None
+        self.protocol = None
+        self.password = None
+        self.enabled = False
+
+
+@dataclasses.dataclass
+class authTarget(baseTarget):
+    """Configuration target with the credentials used by JohnnyFive.
+
+    Additional values in the configuration section are retained as attributes.
+    """
+
+    def __init__(self) -> None:
+        """Initialize a configuration target with credential fields."""
         super().__init__()
         self.access_token = None
         self.apiKey = None
@@ -77,27 +105,95 @@ class authTarget(ligmos.utils.classes.baseTarget):
         self.tokenSecret = None
 
 
-def authenticate_gmail():
-    """authenticate_gmail Console Script for authenticating Gmail
+def assignConf(
+    conf: configparser.SectionProxy,
+    obj: type[baseTarget],
+    backfill: bool = False,
+    debug: bool = False,
+) -> baseTarget:
+    """Copy parsed configuration values to a target instance.
 
-    This will be a command-line script for doing the interactive authentication
-    for Gmail needed to keep the tokens, etc. up to date.
+    Given an arbitrary class reference and a parsed configuration file (conf),
+    assign keys from the latter into parameters in the former.
 
-    TODO: Actually implement this function!
-    """
-    print("Whee!  We're going to authenticate gamil!")
+    Assumes that ALL keys in the class are present in the configuration; if
+    they aren't, then they're set to ```None``` and caught/announced in the
+    ```KeyError``` exception below.
 
-
-def install_conffiles(args=None):
-    """install_conffiles Console Script for installing configuration files
-
-    This function is designed to install the (secret) configuration files
-    (e.g., gmail_credentials.json or johnnyfive.conf) into the proper
-    config/ directory buried wherever on the filesystem.
+    If 'backfill' is False, parameters that are in the *configuration file*
+    but not in the given class are *ignored* completely.  If True,
+    they're added to the given class with a warning.
 
     Parameters
     ----------
-    args : `Any`, optional
+    conf : configparser.SectionProxy
+        Configuration section to convert.
+    obj : type[baseTarget]
+        Target class to instantiate.
+    backfill : bool, optional
+        Whether to retain keys not predefined by ``obj``.
+    debug : bool, optional
+        Whether to print missing predefined keys.
+
+    Returns
+    -------
+    baseTarget
+        Populated configuration target.
+    """
+    # Make an instance of our given object/class
+    classy = obj()
+
+    # Get the list of parameters in the instance (classy) given class (obj)
+    oparams = list(classy.__dict__.keys())
+
+    # Now do the same for the configuration object (conf)
+    cparams = list(conf.keys())
+
+    # Check to see if there are any that are in the class but not in the conf
+    #   If there are, keydiffs will != [] and they'll be shoved into the class
+    #   with a warning if backfill is True, otherwise they're ignored entirely
+    keydiffs = list(set(cparams) - set(oparams))
+
+    for key in classy.__dict__:
+        try:
+            # Remember: key is from the input class here
+            kval = conf[key]
+
+            # Check to see if it's a comma-separated-list, and other parsing
+            #   stuff happens to check for none/true/false
+            nkval = valChecks(kval)
+
+            # Actually set the parameter (key) in the class (classy)
+            #   to the value that we found/cleaned up (nkval)
+            setattr(classy, key, nkval)
+        except KeyError:
+            # This means that
+            if debug is True:
+                print("Missing expected configuration key %s" % (key))
+            # Just set it to None and move on with our lives
+            setattr(classy, key, None)
+
+    if backfill is True:
+        # If there are any, that is
+        if keydiffs != []:
+            for orphan in keydiffs:
+                orphVal = valChecks(conf[orphan])
+                print("Setting orphan object key %s to %s" % (orphan, orphVal))
+                setattr(classy, orphan, orphVal)
+
+    return classy
+
+
+def install_conffiles(args: typing.Sequence[str] | None = None) -> None:
+    """Console Script for installing configuration files
+
+    This function is designed to install the (secret) configuration files
+    (`e.g.`, ``gmail_credentials.json`` or ``johnnyfive.conf``) into the proper
+    ``config/`` directory buried wherever on the filesystem.
+
+    Parameters
+    ----------
+    args : :obj:~`typing.Any`, optional
         The arguments passed from the command line [Default: None]
     """
     # Use argparse for the Command-Line Script
@@ -117,7 +213,7 @@ def install_conffiles(args=None):
     # Now, loop through the files privided
     for file in res.files:
         # Skip things that aren't files
-        if not isinstance(file, str) or not os.path.isfile(file):
+        if not isinstance(file, str) or not pathlib.Path(file).is_file():
             print(f"Argument {file} is not a file... skipping.")
             continue
 
@@ -127,35 +223,52 @@ def install_conffiles(args=None):
             shutil.copy2(file, Paths.config)
 
 
-def read_ligmos_conffiles(confname, conffile="johnnyfive.conf"):
-    """read_ligmos_conffiles Read a configuration file using LIGMOS
-
-    Having this as a separate function may be a bit of an overkill, but it
-    makes it easier to keep the ligmos imports only in one place, and
-    simplifies the code elsewhere.
+def read_config_section(
+    confname: str, conffile: str = "johnnyfive.conf"
+) -> baseTarget:
+    """Read a JohnnyFive configuration section into an attribute object.
 
     Parameters
     ----------
-    confname : `str`
+    confname : :obj:`str`
         Name of the table within the configuration file to parse
-    conffile : `str`
+    conffile : :obj:`str`
         Name of the configuration file to parse
 
     Returns
     -------
-    `ligmos.utils.classes.baseTarget`
+    :class:`baseTarget`
         An object with arrtibutes matching the keys in the associated
         configuration file.
     """
-    ligconf = ligmos.utils.confparsers.rawParser(os.path.join(Paths.config, conffile))
-    ligconf = ligmos.workers.confUtils.assignConf(
-        ligconf[confname], authTarget, backfill=True
-    )
-    return ligconf
+    try:
+        config = rawParser(Paths.config / conffile)
+        return assignConf(config[confname], authTarget, backfill=True)
+    except KeyError as err:
+        raise J5Error(
+            f"Configuration key {confname} not present.\n"
+            "Try installing configuration files via j5 utilities."
+        ) from err
+    except Exception as err:
+        raise J5Error(
+            "Unexpected error occurred while reading in configuration file.\n"
+            f"\n{type(err).__name__}  {err.args}"
+        ) from err
 
 
-def print_dict(dd, indent=0, di=4):
-    """print_dict Print a dictionary in tree format
+def read_ligmos_conffiles(
+    confname: str, conffile: str = "johnnyfive.conf"
+) -> baseTarget:
+    """Backward-compatible alias for :func:`read_config_section`.
+
+    JohnnyFive no longer depends on ligmos; new code should use
+    :func:`read_config_section`.
+    """
+    return read_config_section(confname, conffile)
+
+
+def print_dict(dd: dict[str, typing.Any], indent: int = 0, di: int = 4) -> None:
+    """Print a dictionary in tree format
 
     You know how sometimes you get these nested dictionaries, and they're a
     pain to visually parse?  This routine prints out the contents of a
@@ -166,11 +279,11 @@ def print_dict(dd, indent=0, di=4):
 
     Parameters
     ----------
-    dd : `dict`
+    dd : :obj:`dict`
         The dictionary to print
-    indent : `int`, optional
+    indent : :obj:`int`, optional
         The initial indentation for the tree [Default: 0]
-    di: `int`, optional
+    di: :obj:`int`, optional
         The incremental indentation for each layer of the tree [Default: 4]
     """
     if not isinstance(dd, dict):
@@ -186,33 +299,105 @@ def print_dict(dd, indent=0, di=4):
             print(f"{' '*indent}{key:12s}: {value}")
 
 
-def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
-    """safe_service_connect Safely connect to Service (error-catching)
+def proper_print(
+    msg: str, level: str, logger: logging.Logger | None = None
+) -> None:
+    """Log if logger, else print to stdout
 
-    Wrapper for Service-connection functions to catch errors that might be
-    kicked (ConnectionTimeout, for instance).
-
-    This function performs a semi-infinite loop, pausing for `pause` seconds
-    after each failed function call, up to a maximum of `nretries` retries.
+    Selects a logger method or standard warning/output based on ``level``.
 
     Parameters
     ----------
-    func : `method`
-        The Service connection method to be wrapped
-    pause : `int` or `float`, optional
-        The number of seconds to wait in between retries to connect.
-        [Default: 5]
-    nretries : `int`, optional
-        The total number of times to retry connecting before returning None
-        [Default: 10]
+    msg : :obj:`str`
+        The message to convey
+    level : ;obj:`str`
+        The logging level.  One of [``info``,``warn``,``except``]
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  [Default: None]
+    """
+    if level == "info":
+        if logger is None:
+            print(msg)
+        else:
+            logger.info(msg)
+    elif level == "warn":
+        if logger is None:
+            warnings.warn(msg)
+        else:
+            logger.warning(msg)
+    elif level == "error":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.error(msg)
+    elif level == "except":
+        if logger is None:
+            warnings.warn(f"EXCEPTION: {msg}")
+        else:
+            logger.exception(msg)
+
+
+def rawParser(confname: str | pathlib.Path) -> configparser.ConfigParser:
+    """Parse an INI-style configuration file.
+
+    Parameters
+    ----------
+    confname : str | pathlib.Path
+        Path to the configuration file.
 
     Returns
     -------
-    `Any`
-        The return value of `func` -- or None if unable to run `func`
+    configparser.ConfigParser
+        Parsed configuration, which is empty if the file cannot be opened.
     """
-    for i in range(1, nretries + 1):
+    config = None
+    try:
+        config = configparser.ConfigParser()
+        config.read_file(open(confname, "r"))
+    except IOError as err:
+        print("ERROR: Configuration file %s not found!" % (confname))
+        print(str(err))
 
+    return config
+
+
+def safe_service_connect(
+    func: typing.Callable[..., typing.Any],
+    *args: typing.Any,
+    pause: int | float = 5,
+    nretries: int = 5,
+    logger: logging.Logger | None = None,
+    **kwargs: typing.Any,
+) -> typing.Any:
+    """Safely connect to Service (includes error-catching)
+
+    Wrapper for Service-connection functions to catch errors that might be
+    kicked (``ConnectionTimeout``, for instance).
+
+    This function performs a semi-infinite loop, pausing for ``pause`` seconds
+    after each failed function call, up to a maximum of ``nretries`` retries.
+
+    Parameters
+    ----------
+    func : :obj:`~typing.Callable`
+        The Service connection method to be wrapped
+    pause : :obj:`int` or :obj:`float`, optional
+        The number of seconds to wait in between retries to connect.
+        [Default: 5]
+    nretries : :obj:`int`, optional
+        The total number of times to retry connecting before returning None
+        [Default: 10]
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  [Default: None]
+
+    Returns
+    -------
+    :obj:`~typing.Any`
+        The return value of ``func`` -- or None if unable to run ``func``
+    """
+
+    # Now, for the actual function...
+    for i in range(1, nretries + 1):
         # Nominal function return
         try:
             return func(*args, **kwargs)
@@ -220,43 +405,130 @@ def safe_service_connect(func, *args, pause=5, nretries=5, **kwargs):
         # This is a network error... retry
         except (
             ConnectionError,
-            TransportError,
+            TimeoutError,
+            google.auth.exceptions.TransportError,
             httplib2.error.ServerNotFoundError,
-        ) as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
+            requests.exceptions.ReadTimeout,
+        ) as err:
+            proper_print(
+                f"Execution of `{func.__name__}` failed because of network error."
+                f"\n{err}",
+                "error",
+                logger,
             )
-            if (i := i + 1) <= nretries:
-                print(
-                    f"Waiting {pause} seconds before starting attempt #{i}/{nretries}"
+
+            if i < nretries:
+                proper_print(
+                    f"Waiting {pause} seconds before starting attempt #{i+1}/{nretries}",
+                    "info",
+                    logger,
                 )
                 time.sleep(pause)
             else:
-                raise ConnectionError(
-                    f"Could not connect to service after {nretries} attempts."
-                ) from exception
+                proper_print(
+                    f"Could not connect to service after {nretries} attempts.",
+                    "error",
+                    logger,
+                )
+                break
 
         # This is for a Service error (premissions, etc.), no retry
-        except requests.exceptions.HTTPError as exception:
-            print(
-                f"\nWarning: Execution of `{func.__name__}` failed because of:\n{exception}"
-                "\nAborting..."
+        except requests.exceptions.HTTPError as err:
+            proper_print(
+                f"Execution of `{func.__name__}` failed because of HTTP error."
+                f"\n{type(err).__name__}  {err.args}",
+                "error",
+                logger,
             )
-            break
+            proper_print("Aborting...", "except", logger)
+            raise err
 
-        # Gmail service error, no retry and pass the exception upward
-        except HttpError as exception:
-            warnings.warn(
-                f"Caught Gmail error... passing up.  {type(exception).__name__}"
-            )
-            raise exception
+        # # Gmail service error, no retry and pass the exception upward
+        # except googleapiclient.errors.HttpError as exception:
+        #     proper_print(
+        #         f"Caught Gmail HTTP error... passing up.  {type(exception).__name__}",
+        #         "except",
+        #         logger,
+        #     )
+        #     raise exception
 
         # Slack service error, no retry and pass the exception upward
-        except SlackApiError as exception:
-            warnings.warn(
-                f"Caught Slack error... passing up.  {type(exception).__name__}"
+        except slack_sdk.errors.SlackApiError as err:
+            proper_print(
+                f"Caught Slack API error... passing up.  {type(err).__name__}",
+                "except",
+                logger,
             )
-            raise exception
+            raise err
 
-    # If not successful, return None
-    return None
+        # Confluence service error, no retry and pass the excepetion upward
+        except atlassian.errors.ApiError as err:
+            proper_print(
+                f"Caught Atlassian API Error... passing up.  {type(err).__name__}",
+                "except",
+                logger,
+            )
+            raise err
+
+        # Google RefreshError occurs when the gmail_token.json to too old
+        except google.auth.exceptions.RefreshError as err:
+            proper_print(
+                "Google Token Refresh Error.\n"
+                f"\tDescription: {err.args[0]}\n"
+                "\tIf the reason is 'Token has been expired or revoked', then run\n"
+                "\t`j5_authenticate_gmail` to refresh the token.",
+                "error",
+                logger,
+            )
+            raise err
+
+    # If not successful, raise error
+    raise J5Error("Unspecified error")
+
+
+def valChecks(kval: str) -> str | bool | None | list[str | bool | None]:
+    """Convert comma-separated configuration values to Python values.
+
+    Parameters
+    ----------
+    kval : str
+        Raw configuration value.
+
+    Returns
+    -------
+    str | bool | None | list[str | bool | None]
+        A scalar for one value or a list for multiple values, with literal
+        ``true``, ``false``, and ``none`` converted to their Python values.
+    """
+    # It'll always be a string by this point, so it should always
+    #   have a .split() method.  If not, someone else has mucked about
+    #   with the configuration object before it got here.
+    kval = kval.strip().split(",")
+
+    # Trim off leading/trailing whitespace for each. Also make sure
+    #    that it's a list, no matter what, so we can itterate over it.
+    kval = [kv.strip() for kv in kval]
+
+    # kval is now definitely a list
+    allval = []
+    for val in kval:
+        # Some icky type checks
+        if val.lower() == "none":
+            nkval = None
+        elif val.lower() == "false":
+            nkval = False
+        elif val.lower() == "true":
+            nkval = True
+        else:
+            nkval = val
+        # Put it into a list in case there's more than one
+        allval.append(nkval)
+
+    # If there's just one thing that we found, return it alone. Otherwise
+    #   return the full list of stuff
+    if len(allval) == 1:
+        nkval = allval[0]
+    else:
+        nkval = allval
+
+    return nkval

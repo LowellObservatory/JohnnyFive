@@ -1,0 +1,3 @@
+# Runtime dependencies are declared in pyproject.toml.  This convenience file
+# installs the project and its development/test tools from a source checkout.
+.[dev,test]

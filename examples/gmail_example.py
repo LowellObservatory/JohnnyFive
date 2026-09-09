@@ -1,13 +1,17 @@
-""" Example for using the Gmail module
-
-_extended_summary_
-"""
+"""Demonstrate the Gmail message API."""
 
 from johnnyfive import gmail as j5g
 from johnnyfive import utils
 
 
-def main(interactive=False):
+def main(interactive: bool = False) -> None:
+    """Demonstrate sending a Gmail message with an attachment.
+
+    Parameters
+    ----------
+    interactive : bool, optional
+        Whether OAuth authentication may open a browser.
+    """
     """main Main Testing Driver
    """
 

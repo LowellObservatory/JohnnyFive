@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 14-Feb-2022
 #
@@ -18,13 +16,16 @@ TODO: Properly deal with possible error states (try/except blocks)
 """
 
 # Built-In Libraries
+import pathlib
+from typing import Any
 import warnings
 
 # 3rd Party Libraries
 import slack_sdk
+import slack_sdk.errors
 
 # Internal Imports
-from johnnyfive import utils
+import johnnyfive.utils
 
 
 # Set API Components
@@ -34,42 +35,49 @@ __all__ = ["SlackChannel"]
 class SlackChannel:
     """SlackChannel Class for communicating with a Slack Channel
 
-    _extended_summary_
+    Resolves a channel name and provides message and file operations.
 
     Parameters
     ----------
-    channel_name : `str`
+    channel_name : :obj:`str`
         Slack Channel into which to post
     """
 
-    def __init__(self, channel_name):
+    def __init__(self, channel_name: str) -> None:
+        """Initialize a channel client.
+
+        Parameters
+        ----------
+        channel_name : str
+            Human-readable Slack channel name.
+        """
         self.client = setup_slack()
 
         # Get the channel ID
         self.channel_id = self._read_channels(channel_name)
 
-    def send_message(self, message):
-        """send_message Send a (text only) message to the channel
+    def send_message(self, message: str) -> Any:
+        """Send a (text only) message to the channel
 
-        _extended_summary_
+        The Slack API response is returned unchanged.
 
         Parameters
         ----------
-        message : `str` or `blocks[]` array
+        message : :obj:`str` or `blocks[]` array
             The message to send to the Slack channel
 
         Returns
         -------
-        `Any`
+        :obj:`~typing.Any`
             The response from Slack
         """
         response = None
         try:
             # Call the conversations.list method using the WebClient
-            response = utils.safe_service_connect(
+            response = johnnyfive.utils.safe_service_connect(
                 self.client.chat_postMessage,
                 channel=self.channel_id,
-                text=message
+                text=message,
                 # You could also use a blocks[] array to send richer content
             )
             # Print result, which includes information about the message (like TS)
@@ -80,26 +88,26 @@ class SlackChannel:
             )
         return response
 
-    def upload_file(self, file, title=None):
-        """upload_file Upload a file to the channel
+    def upload_file(self, file: str | pathlib.Path, title: str | None = None) -> Any:
+        """Upload a file to the channel
 
-        _extended_summary_
+        The Slack API response is returned unchanged.
 
         Parameters
         ----------
-        file : `str` or `os.PathLike`
+        file : :obj:`str` or :obj:`~pathlib.Path`
             The (path and) filename of the file to be uploaded.
-        title : `str`, optional
-            The title for the file posted [Default: None]
+        title : :obj:`str`, optional
+            The title for the file posted  (Default: None)
 
         Returns
         -------
-        `Any`
+        :obj:`~typing.Any`
             The response from Slack
         """
         response = None
         try:
-            response = utils.safe_service_connect(
+            response = johnnyfive.utils.safe_service_connect(
                 self.client.files_upload,
                 channels=self.channel_id,
                 file=file,
@@ -111,24 +119,26 @@ class SlackChannel:
             )
         return response
 
-    def _read_channels(self, name):
-        """_read_channels Return the Channel ID for the names channel
+    def _read_channels(self, name: str) -> str | None:
+        """Return the Channel ID for the names channel
 
         Parameters
         ----------
-        name : `str`
+        name : :obj:`str`
             The name of the channel
 
         Returns
         -------
-        `str`
+        :obj:`str`
             The desired Channel ID
         """
         conversation_id = None
 
         try:
             # Call the conversations.list() method using the WebClient
-            result = utils.safe_service_connect(self.client.conversations_list)
+            result = johnnyfive.utils.safe_service_connect(
+                self.client.conversations_list
+            )
             for _ in result:
                 if conversation_id is not None:
                     break
@@ -147,20 +157,18 @@ class SlackChannel:
 
 
 # Internal Functions =========================================================#
-def setup_slack():
-    """setup_slack Setup the Slack WebClient for posting
+def setup_slack() -> slack_sdk.web.client.WebClient | None:
+    """Setup the Slack WebClient for posting
 
-    _extended_summary_
+    Reads the configured token and creates a client for Slack API calls.
 
     Returns
     -------
-    client : `slack_sdk.web.client.WebClient`
+    client : :obj:`~slack_sdk.web.client.WebClient`
         The WebClient object needed for reading and writing
-    logger : `logging.Logger`
-        The logging thingie
     """
     # Read the setup
-    setup = utils.read_ligmos_conffiles("slackSetup")
+    setup = johnnyfive.utils.read_config_section("slackSetup")
 
     # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.

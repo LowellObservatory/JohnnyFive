@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 25 Feb 2020
 #
@@ -19,11 +17,35 @@ import ssl
 import socket
 import smtplib
 from email.message import EmailMessage
+from typing import Any
 
 
-def sendMail(message, smtploc='localhost', port=25, user=None, passw=None):
-    """
-    This assumes that 'message' is an instance of EmailMessage
+def sendMail(
+    message: EmailMessage,
+    smtploc: str = "localhost",
+    port: int | str = 25,
+    user: str | None = None,
+    passw: str | None = None,
+) -> bool:
+    """Send an email message via an unencrypted or SSL SMTP connection.
+
+    Parameters
+    ----------
+    message : EmailMessage
+        Message to send.
+    smtploc : str, optional
+        SMTP host name.
+    port : int | str, optional
+        SMTP port number.
+    user : str | None, optional
+        User name for SSL authentication.
+    passw : str | None, optional
+        Password for SSL authentication.
+
+    Returns
+    -------
+    bool
+        Whether the message was sent successfully.
     """
     # Ultimate return value to know whether we need to try again later
     success = False
@@ -77,8 +99,32 @@ def sendMail(message, smtploc='localhost', port=25, user=None, passw=None):
     return success
 
 
-def constructMail(subject, body, fromaddr, toaddr, fromname=None):
-    """
+def constructMail(
+    subject: str,
+    body: str,
+    fromaddr: str,
+    toaddr: str,
+    fromname: str | None = None,
+) -> EmailMessage:
+    """Construct a plain-text email message.
+
+    Parameters
+    ----------
+    subject : str
+        Email subject.
+    body : str
+        Plain-text message body.
+    fromaddr : str
+        Sender address.
+    toaddr : str
+        Recipient address.
+    fromname : str | None, optional
+        Sender display name.
+
+    Returns
+    -------
+    EmailMessage
+        Configured email message.
     """
     msg = EmailMessage()
     if fromname is None:
