@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 23-Sep-2021
 #
@@ -16,9 +14,10 @@ Confluence API Documentation:
 
 # Built-In Libraries
 import logging
+from typing import Any
 
 # 3rd Party Libraries
-import atlassian
+from atlassian.confluence import ConfluenceServer
 import requests
 
 # Internal Imports
@@ -32,7 +31,7 @@ __all__ = ["ConfluencePage"]
 class ConfluencePage:
     """ConfluencePage Class for a single Confluence Page
 
-    _extended_summary_
+    Provides permission-aware operations for one Confluence page.
 
     Parameters
     ----------
@@ -40,7 +39,7 @@ class ConfluencePage:
         The name of the Confluence space for this page
     page_title : :obj:`str`
         The page title
-    instance : :class:`~atlassian.Confluence`, optional
+    instance : :class:`~atlassian.confluence.ConfluenceServer`, optional
         An existing Confluence object instance to be used instead of
         reinstantiating a new Confluence object for communication and
         authentication.  [Default: None]
@@ -54,10 +53,25 @@ class ConfluencePage:
         self,
         space: str,
         page_title: str,
-        instance: atlassian.Confluence = None,
+        instance: ConfluenceServer | None = None,
         use_oauth: bool = False,
-        logger: logging.Logger = None,
-    ):
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Initialize a page wrapper and fetch its metadata.
+
+        Parameters
+        ----------
+        space : str
+            Confluence space key.
+        page_title : str
+            Page title within ``space``.
+        instance : ConfluenceServer | None, optional
+            Existing authenticated client.
+        use_oauth : bool, optional
+            Whether to create a bearer-token client.
+        logger : logging.Logger | None, optional
+            Logger used for service errors.
+        """
         # Initialize instance variables
         self.space = space
         self.title = page_title
@@ -65,16 +79,14 @@ class ConfluencePage:
 
         # Set up the Confluence object instance
         self.confluence = (
-            setup_confluence(use_oauth=use_oauth)
-            if not isinstance(instance, atlassian.Confluence)
-            else instance
+            setup_confluence(use_oauth=use_oauth) if instance is None else instance
         )
         self.space_perms = self._set_permdict()
 
         # Set the class metadata based on this page
         self._set_metadata()
 
-    def add_comment(self, comment: str):
+    def add_comment(self, comment: str) -> None:
         """Add a comment to the Confluence page
 
         Sometimes it's helpful to include a comment at the bottom of the
@@ -93,7 +105,7 @@ class ConfluencePage:
             self.confluence.add_comment, self.page_id, comment, logger=self.logger
         )
 
-    def add_label(self, label: str):
+    def add_label(self, label: str) -> None:
         """Add a label to the Confluence page
 
         Sometimes it's helpful to have a label on a Confluence page for
@@ -114,10 +126,10 @@ class ConfluencePage:
     def attach_file(
         self,
         filename: str,
-        name: str = None,
-        content_type: str = None,
-        comment: str = None,
-    ):
+        name: str | None = None,
+        content_type: str | None = None,
+        comment: str | None = None,
+    ) -> None:
         """Attach a file to this page
 
         Wrapper for the Confluence method attach_file() that includes the
@@ -148,8 +160,8 @@ class ConfluencePage:
         )
 
     def create(
-        self, page_body: str, parent_id: str = None, representation: str = "wiki"
-    ):
+        self, page_body: str, parent_id: str | None = None, representation: str = "wiki"
+    ) -> None:
         """Create a brand new Confluence page
 
         Summon from the depths of computing a new page.
@@ -188,7 +200,7 @@ class ConfluencePage:
         # Set the instance metadata (exists, page_id, etc.)
         self._set_metadata()
 
-    def delete_attachment(self, filename: str):
+    def delete_attachment(self, filename: str) -> None:
         """Delete an attachment from this page
 
         Wrapper for the Confluence method delete_attachment() that includes the
@@ -254,7 +266,7 @@ class ConfluencePage:
         # Extract the contents from the return object
         return contents["body"]["storage"]["value"]
 
-    def smite(self):
+    def smite(self) -> None:
         """smite Kill with extreme prejudice
 
         Remove the Confluence page and update the instance metadata to reflect
@@ -268,7 +280,7 @@ class ConfluencePage:
         )
         self._set_metadata()
 
-    def update_contents(self, body: str):
+    def update_contents(self, body: str) -> None:
         """Update the contents of the Confluence page
 
         Update the page by replacing the existing content with new.  The idea
@@ -327,17 +339,14 @@ class ConfluencePage:
             )
             return False
 
-        # If value is None, no permission check was performed, proceed
+        # If value is None, permission preflight is disabled; let the REST
+        # operation itself enforce the authenticated user's permissions.
         if perm_val is None:
-            johnnyfive.utils.proper_print(
-                "Permissions check is disabled... hoping for the best.",
-                "warn",
-                self.logger,
-            )
+            return True
 
         return True
 
-    def _set_metadata(self):
+    def _set_metadata(self) -> None:
         """Set the various instance metadata
 
         Especially after a page is created or deleted, this method updates the
@@ -361,45 +370,24 @@ class ConfluencePage:
             else f"{self.confluence.url}download/attachments/{self.page_id}/"
         )
 
-    def _set_permdict(self) -> dict:
-        """Create a dictionary of permissions
+    def _set_permdict(self) -> dict[str, bool]:
+        """Disable permission enumeration for REST-based automation clients.
 
-        This method creates a dictionary of permissions for this user in this
-        space.  Each item in the dictionary is boolean based on the results of
-        the method :func:`confluence.get_space_permissions`.
+        Current Confluence REST deployments can require space-administrator
+        privileges to enumerate all permissions. J5 only needs the narrower
+        privileges for each page operation, so it lets those REST operations
+        perform the authoritative authorization check instead.
 
         Returns
         -------
-        :obj:`dict`
-            The dictionary of permissions (boolean)
+        dict[str, bool]
+            Empty map indicating that permission preflight is disabled.
         """
-        perms = johnnyfive.utils.safe_service_connect(
-            self.confluence.get_space_permissions, self.space, logger=self.logger
-        )
-
-        # Check to see if the authenticated user can view permissions
-        if not perms:
-            johnnyfive.utils.proper_print(
-                f"User {self.confluence.username} needs permission to view "
-                f"permissions in space {self.space}.   Contact "
-                "your Confluence administrator.",
-                "warn",
-                self.logger,
-            )
-
-        perm_dict = {}
-        for perm in perms:
-            # Set this permission as false... will update to True if needed
-            perm_dict[perm["type"]] = False
-            for space_perm in perm["spacePermissions"]:
-                if space_perm["userName"] == self.confluence.username:
-                    perm_dict[perm["type"]] = True
-
-        return perm_dict
+        return {}
 
 
 # Internal Functions =========================================================#
-def setup_confluence(use_oauth: bool = False) -> atlassian.Confluence:
+def setup_confluence(use_oauth: bool = False) -> ConfluenceServer:
     """Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
@@ -416,19 +404,19 @@ def setup_confluence(use_oauth: bool = False) -> atlassian.Confluence:
 
     Returns
     -------
-    confluence : :class:`~atlassian.Confluence`
+    confluence : :class:`~atlassian.confluence.ConfluenceServer`
         Confluence class, initialized with credentials
     """
     # Read the setup
-    setup = johnnyfive.utils.read_ligmos_conffiles("confluenceSetup")
+    setup = johnnyfive.utils.read_config_section("confluenceSetup")
 
-    # If we are using OAUTH, instantiate a Confluence object with it
+    # If we are using OAuth, instantiate a Server client with its bearer token.
     if use_oauth:
         session = requests.Session()
         session.headers["Authorization"] = f"Bearer {setup.access_token}"
-        return atlassian.Confluence(url=setup.host, session=session)
+        return ConfluenceServer(url=setup.host, session=session)
 
-    # Else, return a Confluence object instantiated with username/password
-    return atlassian.Confluence(
+    # Otherwise, return a Server client instantiated with username/password.
+    return ConfluenceServer(
         url=setup.host, username=setup.user, password=setup.password
     )

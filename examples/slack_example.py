@@ -1,7 +1,4 @@
-""" Example for using the Slack module
-
-_extended_summary_
-"""
+"""Demonstrate the Slack channel API."""
 
 import os
 
@@ -9,7 +6,8 @@ from johnnyfive import slack as j5s
 from johnnyfive import utils
 
 # Main Testing Driver ========================================================#
-def main():
+def main() -> None:
+    """Demonstrate sending a Slack message and uploading a file."""
     """main Main Testing Driver
     """
     slack_object = j5s.SlackChannel('bot_test')

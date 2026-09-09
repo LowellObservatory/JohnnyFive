@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 14-Feb-2022
 #
@@ -39,7 +37,13 @@ import slack_sdk.errors
 
 
 # Set API Components
-__all__ = ["safe_service_connect", "print_dict", "proper_print", "J5Error"]
+__all__ = [
+    "J5Error",
+    "print_dict",
+    "proper_print",
+    "read_config_section",
+    "safe_service_connect",
+]
 
 
 # Define error classes
@@ -55,7 +59,7 @@ class J5Error(Exception):
 class Paths:
     """Paths
 
-    [extended_summary]
+    Centralizes paths to packaged configuration and image resources.
     """
 
     # Main data & config directories
@@ -72,7 +76,8 @@ class baseTarget:
     most/all the usual stuff you'd need to connect to a ... thing.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize a configuration target with common connection fields."""
         self.name = None
         self.host = None
         self.port = 22
@@ -85,13 +90,13 @@ class baseTarget:
 
 @dataclasses.dataclass
 class authTarget(baseTarget):
-    """Extension of LIGMOS baseTarget class
+    """Configuration target with the credentials used by JohnnyFive.
 
-    Adds specified attributes used in JohnnyFive to silence LIGMOS's
-    "Setting orphan object key" messages
+    Additional values in the configuration section are retained as attributes.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize a configuration target with credential fields."""
         super().__init__()
         self.access_token = None
         self.apiKey = None
@@ -100,8 +105,14 @@ class authTarget(baseTarget):
         self.tokenSecret = None
 
 
-def assignConf(conf, obj, backfill=False, debug=False):
-    """
+def assignConf(
+    conf: configparser.SectionProxy,
+    obj: type[baseTarget],
+    backfill: bool = False,
+    debug: bool = False,
+) -> baseTarget:
+    """Copy parsed configuration values to a target instance.
+
     Given an arbitrary class reference and a parsed configuration file (conf),
     assign keys from the latter into parameters in the former.
 
@@ -112,6 +123,22 @@ def assignConf(conf, obj, backfill=False, debug=False):
     If 'backfill' is False, parameters that are in the *configuration file*
     but not in the given class are *ignored* completely.  If True,
     they're added to the given class with a warning.
+
+    Parameters
+    ----------
+    conf : configparser.SectionProxy
+        Configuration section to convert.
+    obj : type[baseTarget]
+        Target class to instantiate.
+    backfill : bool, optional
+        Whether to retain keys not predefined by ``obj``.
+    debug : bool, optional
+        Whether to print missing predefined keys.
+
+    Returns
+    -------
+    baseTarget
+        Populated configuration target.
     """
     # Make an instance of our given object/class
     classy = obj()
@@ -157,7 +184,7 @@ def assignConf(conf, obj, backfill=False, debug=False):
     return classy
 
 
-def install_conffiles(args: object = None):
+def install_conffiles(args: typing.Sequence[str] | None = None) -> None:
     """Console Script for installing configuration files
 
     This function is designed to install the (secret) configuration files
@@ -196,14 +223,10 @@ def install_conffiles(args: object = None):
             shutil.copy2(file, Paths.config)
 
 
-def read_ligmos_conffiles(
+def read_config_section(
     confname: str, conffile: str = "johnnyfive.conf"
 ) -> baseTarget:
-    """Read a configuration file using LIGMOS
-
-    Having this as a separate function may be a bit of an overkill, but it
-    makes it easier to keep the ligmos imports only in one place, and
-    simplifies the code elsewhere.
+    """Read a JohnnyFive configuration section into an attribute object.
 
     Parameters
     ----------
@@ -219,9 +242,8 @@ def read_ligmos_conffiles(
         configuration file.
     """
     try:
-        ligconf = rawParser(Paths.config / conffile)
-        ligconf = assignConf(ligconf[confname], authTarget, backfill=True)
-        return ligconf
+        config = rawParser(Paths.config / conffile)
+        return assignConf(config[confname], authTarget, backfill=True)
     except KeyError as err:
         raise J5Error(
             f"Configuration key {confname} not present.\n"
@@ -234,7 +256,18 @@ def read_ligmos_conffiles(
         ) from err
 
 
-def print_dict(dd: dict, indent: int = 0, di: int = 4):
+def read_ligmos_conffiles(
+    confname: str, conffile: str = "johnnyfive.conf"
+) -> baseTarget:
+    """Backward-compatible alias for :func:`read_config_section`.
+
+    JohnnyFive no longer depends on ligmos; new code should use
+    :func:`read_config_section`.
+    """
+    return read_config_section(confname, conffile)
+
+
+def print_dict(dd: dict[str, typing.Any], indent: int = 0, di: int = 4) -> None:
     """Print a dictionary in tree format
 
     You know how sometimes you get these nested dictionaries, and they're a
@@ -266,10 +299,12 @@ def print_dict(dd: dict, indent: int = 0, di: int = 4):
             print(f"{' '*indent}{key:12s}: {value}")
 
 
-def proper_print(msg: str, level: str, logger: logging.Logger = None):
+def proper_print(
+    msg: str, level: str, logger: logging.Logger | None = None
+) -> None:
     """Log if logger, else print to stdout
 
-    _extended_summary_
+    Selects a logger method or standard warning/output based on ``level``.
 
     Parameters
     ----------
@@ -302,10 +337,18 @@ def proper_print(msg: str, level: str, logger: logging.Logger = None):
             logger.exception(msg)
 
 
-def rawParser(confname):
-    """
-    A simple minded parsing of the given confname file.
-    Returns a configparser object.
+def rawParser(confname: str | pathlib.Path) -> configparser.ConfigParser:
+    """Parse an INI-style configuration file.
+
+    Parameters
+    ----------
+    confname : str | pathlib.Path
+        Path to the configuration file.
+
+    Returns
+    -------
+    configparser.ConfigParser
+        Parsed configuration, which is empty if the file cannot be opened.
     """
     config = None
     try:
@@ -319,13 +362,13 @@ def rawParser(confname):
 
 
 def safe_service_connect(
-    func: typing.Callable,
-    *args,
+    func: typing.Callable[..., typing.Any],
+    *args: typing.Any,
     pause: int | float = 5,
     nretries: int = 5,
-    logger: logging.Logger = None,
-    **kwargs,
-) -> object:
+    logger: logging.Logger | None = None,
+    **kwargs: typing.Any,
+) -> typing.Any:
     """Safely connect to Service (includes error-catching)
 
     Wrapper for Service-connection functions to catch errors that might be
@@ -443,8 +486,20 @@ def safe_service_connect(
     raise J5Error("Unspecified error")
 
 
-def valChecks(kval):
-    """ """
+def valChecks(kval: str) -> str | bool | None | list[str | bool | None]:
+    """Convert comma-separated configuration values to Python values.
+
+    Parameters
+    ----------
+    kval : str
+        Raw configuration value.
+
+    Returns
+    -------
+    str | bool | None | list[str | bool | None]
+        A scalar for one value or a list for multiple values, with literal
+        ``true``, ``false``, and ``none`` converted to their Python values.
+    """
     # It'll always be a string by this point, so it should always
     #   have a .split() method.  If not, someone else has mucked about
     #   with the configuration object before it got here.

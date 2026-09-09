@@ -33,12 +33,13 @@ slack_channel = johnnyfive.SlackChannel(channel_name)
 - google-api-python-client
 - google-auth-httplib2
 - google-auth-oauthlib
+- httplib2
 - lxml
-- pyjwt
-- python-twitter
 - requests
 - slack_sdk
-- ligmos @ https://github.com/LowellObservatory/ligmos
+
+JohnnyFive parses its own INI-style configuration file and does not require
+`ligmos`.
 
 ## Installation
 
@@ -52,6 +53,8 @@ Installable either as a standalone library:
 
 Or as a dependancy for other software:
 
-- In your package's `setup.cfg` file, add:
+- In your package's `pyproject.toml` file, add:
 
-    ```install_requires = JohnnyFive @ git+https://github.com/LowellObservatory/JohnnyFive```
+    ```toml
+    dependencies = ["JohnnyFive @ git+https://github.com/LowellObservatory/JohnnyFive"]
+    ```

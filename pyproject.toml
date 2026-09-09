@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "johnnyfive"
+version = "0.3"
+description = "Helper utilities for Lowell Observatory code notifications"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MPL-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Lowell Observatory", email = "rhamilton@lowell.edu" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "atlassian-python-api>=5.0.4,<6",
+    "beautifulsoup4>=4.13.0",
+    "google-api-python-client>=2.200.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.0",
+    "httplib2>=0.22.0",
+    "lxml>=5.3.0",
+    "requests>=2.32.0",
+    "slack-sdk>=3.44.1",
+]
+keywords = ["confluence", "gmail", "notifications", "slack"]
+
+[project.urls]
+"Bug Reports" = "https://github.com/LowellObservatory/JohnnyFive/issues"
+Source = "https://github.com/LowellObservatory/JohnnyFive/"
+
+[project.scripts]
+j5_install_conf = "johnnyfive.utils:install_conffiles"
+j5_authenticate_gmail = "johnnyfive.gmail:authenticate_gmail"
+
+[project.optional-dependencies]
+dev = ["check-manifest>=0.50"]
+test = ["coverage>=7.0", "pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["johnnyfive*"]
+namespaces = false

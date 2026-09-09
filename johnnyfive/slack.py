@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 14-Feb-2022
 #
@@ -19,6 +17,7 @@ TODO: Properly deal with possible error states (try/except blocks)
 
 # Built-In Libraries
 import pathlib
+from typing import Any
 import warnings
 
 # 3rd Party Libraries
@@ -36,7 +35,7 @@ __all__ = ["SlackChannel"]
 class SlackChannel:
     """SlackChannel Class for communicating with a Slack Channel
 
-    _extended_summary_
+    Resolves a channel name and provides message and file operations.
 
     Parameters
     ----------
@@ -44,16 +43,23 @@ class SlackChannel:
         Slack Channel into which to post
     """
 
-    def __init__(self, channel_name: str):
+    def __init__(self, channel_name: str) -> None:
+        """Initialize a channel client.
+
+        Parameters
+        ----------
+        channel_name : str
+            Human-readable Slack channel name.
+        """
         self.client = setup_slack()
 
         # Get the channel ID
         self.channel_id = self._read_channels(channel_name)
 
-    def send_message(self, message: str) -> object:
+    def send_message(self, message: str) -> Any:
         """Send a (text only) message to the channel
 
-        _extended_summary_
+        The Slack API response is returned unchanged.
 
         Parameters
         ----------
@@ -82,10 +88,10 @@ class SlackChannel:
             )
         return response
 
-    def upload_file(self, file: str | pathlib.Path, title: str = None):
+    def upload_file(self, file: str | pathlib.Path, title: str | None = None) -> Any:
         """Upload a file to the channel
 
-        _extended_summary_
+        The Slack API response is returned unchanged.
 
         Parameters
         ----------
@@ -113,7 +119,7 @@ class SlackChannel:
             )
         return response
 
-    def _read_channels(self, name: str) -> str:
+    def _read_channels(self, name: str) -> str | None:
         """Return the Channel ID for the names channel
 
         Parameters
@@ -151,10 +157,10 @@ class SlackChannel:
 
 
 # Internal Functions =========================================================#
-def setup_slack() -> slack_sdk.web.client.WebClient:
+def setup_slack() -> slack_sdk.web.client.WebClient | None:
     """Setup the Slack WebClient for posting
 
-    _extended_summary_
+    Reads the configured token and creates a client for Slack API calls.
 
     Returns
     -------
@@ -162,7 +168,7 @@ def setup_slack() -> slack_sdk.web.client.WebClient:
         The WebClient object needed for reading and writing
     """
     # Read the setup
-    setup = johnnyfive.utils.read_ligmos_conffiles("slackSetup")
+    setup = johnnyfive.utils.read_config_section("slackSetup")
 
     # SlackWebClient instantiates a client that can call API methods
     # When using Bolt, you can use either `app.client` or the `client` passed to listeners.

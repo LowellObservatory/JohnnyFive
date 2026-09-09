@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 15 Feb 2022
 #
@@ -27,6 +25,9 @@ import json
 import logging
 import mimetypes
 import os
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+from typing import Any
 
 # 3rd Party Libraries
 from bs4 import BeautifulSoup
@@ -52,7 +53,7 @@ __all__ = ["GmailMessage", "GetMessages"]
 class GmailMessage:
     """Class for a single Gmail Message
 
-    _extended_summary_
+    Builds MIME messages and sends them through an authenticated Gmail service.
 
     Parameters
     ----------
@@ -75,20 +76,39 @@ class GmailMessage:
 
     def __init__(
         self,
-        toaddr: str | list,
+        toaddr: str | list[str],
         subject: str,
         message_text: str,
-        fromname: str = None,
-        fromaddr: str = None,
+        fromname: str | None = None,
+        fromaddr: str | None = None,
         interactive: bool = False,
-        logger: logging.Logger = None,
-    ):
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Build a Gmail MIME message and initialize its API service.
+
+        Parameters
+        ----------
+        toaddr : str | list[str]
+            Recipient address or addresses.
+        subject : str
+            Email subject.
+        message_text : str
+            Plain-text body.
+        fromname : str | None, optional
+            Sender display name.
+        fromaddr : str | None, optional
+            Sender address; defaults to the J5 configuration value.
+        interactive : bool, optional
+            Whether OAuth authorization may open a browser.
+        logger : logging.Logger | None, optional
+            Logger used for service errors.
+        """
         # Set the logger, if passed
         self.logger = logger
 
         # Load default `fromaddr`` if None passed in
         if not fromaddr:
-            fromaddr = johnnyfive.utils.read_ligmos_conffiles("gmailSetup").user
+            fromaddr = johnnyfive.utils.read_config_section("gmailSetup").user
 
         # Initialize the Gmail connection
         self.service = setup_gmail(interactive=interactive, logger=self.logger)
@@ -102,10 +122,10 @@ class GmailMessage:
         # Place the text into the message
         self.message.attach(email.mime.text.MIMEText(message_text))
 
-    def add_attachment(self, file: str):
+    def add_attachment(self, file: str | Path) -> None:
         """Add an attachment to the GMAIL message
 
-        _extended_summary_
+        The attachment MIME type is inferred from its filename.
 
         Parameters
         ----------
@@ -122,7 +142,7 @@ class GmailMessage:
         # Case out the content type
         main_type, sub_type = content_type.split("/", 1)
         if main_type == "text":
-            with open(file, "rb") as f_obj:
+            with open(file, encoding="utf-8") as f_obj:
                 attachment = email.mime.text.MIMEText(f_obj.read(), _subtype=sub_type)
         elif main_type == "image":
             with open(file, "rb") as f_obj:
@@ -141,10 +161,10 @@ class GmailMessage:
         )
         self.message.attach(attachment)
 
-    def send(self) -> dict:
+    def send(self) -> dict[str, Any]:
         """Send the GmailMessage
 
-        _extended_summary_
+        Encodes the MIME message and sends it through Gmail's API.
 
         Returns
         -------
@@ -181,7 +201,7 @@ class GmailMessage:
 class GetMessages:
     """Get Gmail messages corresponding to given criteria
 
-    _extended_summary_
+    Queries Gmail messages and exposes helpers for rendering and relabeling them.
 
     Parameters
     ----------
@@ -201,12 +221,27 @@ class GetMessages:
 
     def __init__(
         self,
-        label: str = None,
-        after: str = None,
-        before: str = None,
+        label: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
         interactive: bool = False,
-        logger: logging.Logger = None,
-    ):
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Connect to Gmail and collect messages matching search criteria.
+
+        Parameters
+        ----------
+        label : str | None, optional
+            Gmail label name used to filter messages.
+        after : str | None, optional
+            Inclusive lower date bound in ``YYYY/MM/DD`` form.
+        before : str | None, optional
+            Exclusive upper date bound in ``YYYY/MM/DD`` form.
+        interactive : bool, optional
+            Whether OAuth authorization may open a browser.
+        logger : logging.Logger | None, optional
+            Logger used for service errors.
+        """
         # Initialize basic stuff
         self.label_list = None
         self.message_list = []
@@ -248,7 +283,7 @@ class GetMessages:
                     self.logger,
                 )
 
-    def render_message(self, message_id: str) -> dict:
+    def render_message(self, message_id: str) -> dict[str, str]:
         """Retrieve and render a message by ID#
 
         Gmail mnessages are stored in a JSON-like structure that must be
@@ -265,14 +300,17 @@ class GetMessages:
             Dictionary containing the subject, sender, date, and body of
             the message.
         """
+        payload: Mapping[str, Any] | None = None
         try:
             # Get the message, then start parsing (API: users.messages.get)
             results = johnnyfive.utils.safe_service_connect(
-                self.service.users().messages().get(userId="me", id=message_id).execute,
+                self.service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute,
                 logger=self.logger,
             )
-            payload = results["payload"]
-            headers = payload["headers"]
+            payload = results.get("payload", {})
 
         # If exception, print message and return empty values
         except (googleapiclient.errors.HttpError, ConnectionError) as error:
@@ -281,49 +319,91 @@ class GetMessages:
                 "except",
                 self.logger,
             )
-            payload = None
-
         # Return empty dictionary if unsuccessful in connecting
         if not payload:
             return {"subject": "", "sender": "", "date": "", "body": ""}
 
-        # Look for Subject and Sender Email in the headers
-        for head_dict in headers:
-            if head_dict["name"] == "Subject":
-                subject = head_dict["value"]
-            if head_dict["name"] == "From":
-                sender = head_dict["value"]
-            if head_dict["name"] == "Date":
-                date = head_dict["value"]
-
-        # The Body of the message is in Encrypted format -- decode it.
-        #  Get the data and decode it with base 64 decoder.
-
-        # If more than one part (i.e., HTML or images, etc.), get the first
-        data = (
-            payload["body"]["data"]
-            if "parts" not in payload
-            else payload["parts"][0]["body"]["data"]
-        )
-        data = data.replace("-", "+").replace("_", "/")
-        decoded_data = base64.b64decode(data)
-
-        # `decoded_data` is in lxml format; parse with BeautifulSoup
-        body = BeautifulSoup(decoded_data, "lxml").body()
-        body = body[0].text
+        headers = {
+            str(header.get("name", "")).lower(): str(header.get("value", ""))
+            for header in payload.get("headers", [])
+            if isinstance(header, Mapping)
+        }
 
         # Return a dictionary with the plain-text components of this message
-        return {"subject": subject, "sender": sender, "date": date, "body": body}
+        return {
+            "subject": headers.get("subject", ""),
+            "sender": headers.get("from", ""),
+            "date": headers.get("date", ""),
+            "body": self._extract_message_body(payload),
+        }
+
+    @staticmethod
+    def _iter_message_parts(part: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+        """Yield a MIME part and all of its nested child parts.
+
+        Parameters
+        ----------
+        part : Mapping[str, Any]
+            Gmail ``MessagePart`` object to traverse.
+
+        Yields
+        ------
+        Mapping[str, Any]
+            Each MIME part in depth-first order.
+        """
+        yield part
+        for child in part.get("parts", []):
+            if isinstance(child, Mapping):
+                yield from GetMessages._iter_message_parts(child)
+
+    @classmethod
+    def _extract_message_body(cls, payload: Mapping[str, Any]) -> str:
+        """Extract readable inline text from a Gmail MIME payload.
+
+        Plain text is preferred when both ``text/plain`` and ``text/html``
+        alternatives are present. Container and attachment parts without
+        inline ``body.data`` are ignored.
+
+        Parameters
+        ----------
+        payload : Mapping[str, Any]
+            Top-level Gmail ``MessagePart`` payload.
+
+        Returns
+        -------
+        str
+            Decoded message text, or an empty string when no readable inline
+            text part exists.
+        """
+        parts = list(cls._iter_message_parts(payload))
+        for mime_type in ("text/plain", "text/html"):
+            for part in parts:
+                if part.get("mimeType", "").lower() != mime_type:
+                    continue
+                body = part.get("body", {})
+                data = body.get("data") if isinstance(body, Mapping) else None
+                if not isinstance(data, str) or not data:
+                    continue
+
+                padded_data = data + "=" * (-len(data) % 4)
+                decoded = base64.urlsafe_b64decode(padded_data).decode(
+                    "utf-8", errors="replace"
+                )
+                if mime_type == "text/plain":
+                    return decoded
+                return BeautifulSoup(decoded, "lxml").get_text(separator="\n", strip=True)
+
+        return ""
 
     def update_msg_labels(
         self,
         message_id: str,
-        add_labels: list[str] = None,
-        remove_labels: list[str] = None,
-    ):
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Update the labels for a message by ID#
 
-        _extended_summary_
+        Label names are resolved to Gmail label IDs before the update.
 
         Parameters
         ----------
@@ -373,10 +453,10 @@ class GetMessages:
         # If unsuccessful in connecting, raise
         raise johnnyfive.utils.J5Error("Unsuccessful connection")
 
-    def _label_id_from_name(self, name: str) -> str:
+    def _label_id_from_name(self, name: str | None) -> str | None:
         """Get the Label ID from the Label Name
 
-        _extended_summary_
+        The label list is retrieved once and cached for the instance.
 
         Parameters
         ----------
@@ -424,10 +504,12 @@ class GetMessages:
         return label_id
 
     @staticmethod
-    def build_query(after_date: str = None, before_date: str = None) -> str:
+    def build_query(
+        after_date: str | None = None, before_date: str | None = None
+    ) -> str:
         """build_query Build the query string for users.messages.list
 
-        _extended_summary_
+        Date filters are formatted for Gmail's message-list query syntax.
 
         Parameters
         ----------
@@ -451,11 +533,11 @@ class GetMessages:
 
 # Newer OAUTH Routines =======================================================#
 def setup_gmail(
-    interactive: bool = False, logger: logging.Logger = None
+    interactive: bool = False, logger: logging.Logger | None = None
 ) -> googleapiclient.discovery.Resource:
     """Initialize the GMail API (via OAuth)
 
-    [extended_summary]
+    Creates or refreshes the OAuth credentials used by the Gmail API.
 
     NOTE: The first time this is run on a machine, it will open a webpage for
           authorizing the API.  All subsequent runs will be silent.
@@ -549,7 +631,7 @@ def setup_gmail(
         raise johnnyfive.utils.J5Error from err
 
 
-def authenticate_gmail(logger: logging.Logger = None):
+def authenticate_gmail(logger: logging.Logger | None = None) -> None:
     """Console Script for authenticating Gmail
 
     This is the command-line script for doing the interactive authentication

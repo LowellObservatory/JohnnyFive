@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 25 Feb 2020
 #
@@ -16,10 +14,19 @@ Further description.
 from __future__ import division, print_function, absolute_import
 
 
-class emailSNMP(object):
-    """emailSNMP _summary_"""
+class emailSNMP:
+    """Store SMTP connection and message configuration.
 
-    def __init__(self):
+    Attributes
+    ----------
+    host : str | None
+        SMTP server host name.
+    port : int
+        SMTP server port.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an SMTP configuration with safe defaults."""
         self.host = None
         self.port = 465
         self.user = None
