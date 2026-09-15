@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 15 Feb 2022
 #
@@ -18,26 +16,61 @@ Gmail API Documentation:
 
 # Built-In Libraries
 import base64
-from email import mime
+import collections.abc
+import email.mime.audio
+import email.mime.base
+import email.mime.image
+import email.mime.multipart
+import email.mime.text
+import json
+import logging
 import mimetypes
-import os
-import warnings
+import pathlib
+import random
+import time
+import typing
 
 # 3rd Party Libraries
 from bs4 import BeautifulSoup
-from googleapiclient.discovery import build
-from googleapiclient.errors import UnknownApiNameOrVersion
-from googleapiclient.errors import HttpError
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+import googleapiclient.discovery
+import googleapiclient.errors
+import google_auth_oauthlib.flow
+import google.auth.exceptions
+import google.auth.transport.requests
+import google.oauth2.credentials
 
 # Internal Imports
-from johnnyfive import utils
-
+import johnnyfive.utils
 
 # This scope is for sending email using the OAuth2 library
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+
+# Retry only operations whose result is safe to repeat.  ``messages.send`` is
+# intentionally excluded because a timeout after Gmail accepts the message can
+# otherwise create a duplicate email.
+_RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+_RETRYABLE_403_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded"})
+_MAX_GMAIL_RETRIES = 5
+_MAX_BACKOFF_SECONDS = 32
+
+
+def _gmail_users(service: googleapiclient.discovery.Resource) -> typing.Any:
+    """Return Gmail's dynamically generated users resource.
+
+    The Google client creates resource methods at runtime, so its static
+    ``Resource`` annotation does not expose ``users`` to type checkers.
+
+    Parameters
+    ----------
+    service : googleapiclient.discovery.Resource
+        Root Gmail discovery service.
+
+    Returns
+    -------
+    Any
+        Gmail users resource with discovery-generated methods.
+    """
+    return typing.cast(typing.Any, service).users()
 
 
 # Set API Components
@@ -45,62 +78,90 @@ __all__ = ["GmailMessage", "GetMessages"]
 
 
 class GmailMessage:
-    """GmailMessage Class for a single Gmail Message
+    """Class for a single Gmail Message
 
-    _extended_summary_
+    Builds MIME messages and sends them through an authenticated Gmail service.
 
     Parameters
     ----------
-    toaddr : `str` or `list`
+    toaddr : :obj:`str` or :obj:`list`
         The intended recipient(s) of the email message
-    subject : `str`
+    subject : :obj:`str`
         The subject of the email message
-    message_text : `str`
+    message_text : :obj:`str`
         The body text of the email message (as a single string with optional
         newlines.)
-    fromname : `str`, optional
+    fromname : :obj:`str`, optional
         Display Name of the sender (i.e. which bot) [Default: None]
-    fromaddr : `str`, optional
+    fromaddr : :obj:`str`, optional
         Sender email address [Default: Value from [gmailSetup]]
+    interactive : :obj:`bool`, optional
+        Whether to run this in interactive mode  (Default: False)
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
 
     def __init__(
         self,
-        toaddr,
-        subject,
-        message_text,
-        fromname=None,
-        fromaddr=None,
-        interactive=False,
-    ):
+        toaddr: str | list[str],
+        subject: str,
+        message_text: str,
+        fromname: str | None = None,
+        fromaddr: str | None = None,
+        interactive: bool = False,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Build a Gmail MIME message and initialize its API service.
+
+        Parameters
+        ----------
+        toaddr : str | list[str]
+            Recipient address or addresses.
+        subject : str
+            Email subject.
+        message_text : str
+            Plain-text body.
+        fromname : str | None, optional
+            Sender display name.
+        fromaddr : str | None, optional
+            Sender address; defaults to the J5 configuration value.
+        interactive : bool, optional
+            Whether OAuth authorization may open a browser.
+        logger : logging.Logger | None, optional
+            Logger used for service errors.
+        """
+        # Set the logger, if passed
+        self.logger = logger
+
         # Load default `fromaddr`` if None passed in
         if not fromaddr:
-            fromaddr = utils.read_ligmos_conffiles("gmailSetup").user
+            fromaddr = johnnyfive.utils.read_config_section("gmailSetup").user
 
         # Initialize the Gmail connection
-        self.service = setup_gmail(interactive=interactive)
+        self.service = setup_gmail(interactive=interactive, logger=self.logger)
 
         # Build the container for a multipart MIME message
-        self.message = mime.multipart.MIMEMultipart()
+        self.message = email.mime.multipart.MIMEMultipart()
         self.message["to"] = toaddr if isinstance(toaddr, str) else ",".join(toaddr)
         self.message["from"] = f"{fromname} <{fromaddr}>" if fromname else fromaddr
         self.message["subject"] = subject
 
         # Place the text into the message
-        self.message.attach(mime.text.MIMEText(message_text))
+        self.message.attach(email.mime.text.MIMEText(message_text))
 
-    def add_attachment(self, file):
-        """add_attachment _summary_
+    def add_attachment(self, file: str | pathlib.Path) -> None:
+        """Add an attachment to the GMAIL message
 
-        _extended_summary_
+        The attachment MIME type is inferred from its filename.
 
         Parameters
         ----------
-        file : `str`
+        file : :obj:`str`
             Filename of the attachment
         """
-        # For the attachment, guess the MIME type for reading it in
-        content_type, encoding = mimetypes.guess_type(file)
+        file_path = pathlib.Path(file)
+        # For the attachment, guess the MIME type for reading it in.
+        content_type, encoding = mimetypes.guess_type(file_path)
 
         # Set unknown type
         if content_type is None or encoding is not None:
@@ -109,38 +170,33 @@ class GmailMessage:
         # Case out the content type
         main_type, sub_type = content_type.split("/", 1)
         if main_type == "text":
-            with open(file, "rb") as fp:
-                attachment = mime.text.MIMEText(fp.read(), _subtype=sub_type)
+            with file_path.open(encoding="utf-8") as f_obj:
+                attachment = email.mime.text.MIMEText(f_obj.read(), _subtype=sub_type)
         elif main_type == "image":
-            with open(file, "rb") as fp:
-                attachment = mime.image.MIMEImage(fp.read(), _subtype=sub_type)
+            with file_path.open("rb") as f_obj:
+                attachment = email.mime.image.MIMEImage(f_obj.read(), _subtype=sub_type)
         elif main_type == "audio":
-            with open(file, "rb") as fp:
-                attachment = mime.audio.MIMEAudio(fp.read(), _subtype=sub_type)
+            with file_path.open("rb") as f_obj:
+                attachment = email.mime.audio.MIMEAudio(f_obj.read(), _subtype=sub_type)
         else:
-            with open(file, "rb") as fp:
-                attachment = mime.base.MIMEBase(main_type, sub_type)
-                attachment.set_payload(fp.read())
+            with file_path.open("rb") as f_obj:
+                attachment = email.mime.base.MIMEBase(main_type, sub_type)
+                attachment.set_payload(f_obj.read())
 
         # Add the attachment to the email message
         attachment.add_header(
-            "Content-Disposition", "attachment", filename=os.path.basename(file)
+            "Content-Disposition", "attachment", filename=file_path.name
         )
         self.message.attach(attachment)
 
-    def send(self):
-        """send Send the GmailMessage
+    def send(self) -> dict[str, typing.Any]:
+        """Send the GmailMessage
 
-        _extended_summary_
+        Encodes the MIME message and sends it through Gmail's API.
 
-        Parameters
-        ----------
-        n_tries : `int`, optional
-            The number of retry attemps at sending this message  [Default: 5]
-
-         Returns
+        Returns
         -------
-        `dict`
+        :obj:`dict`
             The sent message object
         """
         # Take the message object, and 64-bit encode it properly for sending
@@ -150,157 +206,293 @@ class GmailMessage:
 
         # If Gmail `Resource` was not returned earlier, try again
         if not self.service:
-            self.service = setup_gmail()
+            self.service = setup_gmail(logger=self.logger)
 
         # Try to send the message (API: users.messages.send)
         try:
-            return utils.safe_service_connect(
-                self.service.users()
+            return johnnyfive.utils.safe_service_connect(
+                _gmail_users(self.service)
                 .messages()
                 .send(userId="me", body=sendable_message)
-                .execute
+                .execute,
+                logger=self.logger,
+                nretries=1,
             )
-        except (HttpError, ConnectionError) as error:
-            warnings.warn(f"An error occurred within GmailMessage.send():\n{error}")
-            return None
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
+            johnnyfive.utils.proper_print(
+                f"An error occurred within GmailMessage.send(): {error}",
+                "except",
+                self.logger,
+            )
+            raise johnnyfive.utils.J5Error from error
 
 
 class GetMessages:
-    """GetMessages Get Gmail messages corresponding to given criteria
+    """Get Gmail messages corresponding to given criteria
 
-    _extended_summary_
+    Queries Gmail messages and exposes helpers for rendering and relabeling them.
 
     Parameters
     ----------
-    label : `str`, optional
+    label : :obj:`str`, optional
         The Gmail label of messages to find [Default: None]
-    after : `str`, optional
+    after : :obj:`str`, optional
         Date after which to search for messages. Must be in YYYY/MM/DD format.
-        [Default: None]
-    before : `str`, optional
+        (Default: None)
+    before : :obj:`str`, optional
         Date before which to search for messages. Must be in YYYY/MM/DD format.
-        [Default: None]
+        (Default: None)
+    interactive : :obj:`bool`, optional
+        Whether to run this in interactive mode  (Default: False)
+    strict : :obj:`bool`, optional
+        Whether message-listing failures should be raised instead of being
+        logged after retry attempts. [Default: False]
+    logger : :obj:`logging.Logger`, optional
+        The logger object for logging  [Default: None]
     """
 
-    def __init__(self, label=None, after=None, before=None, interactive=False):
+    def __init__(
+        self,
+        label: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        interactive: bool = False,
+        strict: bool = False,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Connect to Gmail and collect messages matching search criteria.
+
+        Parameters
+        ----------
+        label : str | None, optional
+            Gmail label name used to filter messages.
+        after : str | None, optional
+            Inclusive lower date bound in ``YYYY/MM/DD`` form.
+        before : str | None, optional
+            Exclusive upper date bound in ``YYYY/MM/DD`` form.
+        interactive : bool, optional
+            Whether OAuth authorization may open a browser.
+        strict : bool, optional
+            Whether listing failures should propagate to the caller after
+            retry attempts.
+        logger : logging.Logger | None, optional
+            Logger used for service errors.
+        """
         # Initialize basic stuff
         self.label_list = None
         self.message_list = []
+        self.logger = logger
+        self.strict = strict
 
         # Initialize the Gmail connection
-        self.service = setup_gmail(interactive=interactive)
-        self.label_id = self._lableId_from_labelName(label)
-        self.query = build_query(after_date=after, before_date=before)
+        self.service = setup_gmail(interactive=interactive, logger=self.logger)
 
-        # Get the list of matching messages (API: users.messages.list)
-        if self.label_id:
-            try:
-                results = utils.safe_service_connect(
-                    self.service.users()
-                    .messages()
-                    .list(
-                        userId="me",
-                        labelIds=[self.label_id],
-                        q=self.query,
-                        maxResults=500,
-                    )
-                    .execute
-                )
-                self.message_list = results.get("messages", [])
-            except (HttpError, ConnectionError) as error:
-                warnings.warn(
-                    f"An error occurred within GetMessages.__init__():\n{error}"
-                )
+        # If we cannot connect to GMail, return here with an empty message_list
+        if self.service is None:
+            johnnyfive.utils.proper_print(
+                "Cannot connect to GMail!", "error", self.logger
+            )
+            return
 
-    def render_message(self, message_id):
-        """render_message Retrieve and render a message by ID#
+        self.label_id = self._label_id_from_name(label) if label else None
+        self.query = self.build_query(after_date=after, before_date=before)
+
+        # Do not silently search the whole mailbox when a requested label is
+        # absent.  With no label, however, list all messages matching ``q``.
+        if label and self.label_id is None:
+            johnnyfive.utils.proper_print(
+                f"Gmail label {label!r} was not found.", "warn", self.logger
+            )
+            return
+
+        if self.strict:
+            self._list_messages_strict()
+        else:
+            self._list_messages()
+
+    @staticmethod
+    def build_query(
+        after_date: str | None = None, before_date: str | None = None
+    ) -> str:
+        """build_query Build the query string for users.messages.list
+
+        Date filters are formatted for Gmail's message-list query syntax.
+
+        Parameters
+        ----------
+        after_date : :obj:`str`
+            Date after which to search for messages.
+        before_date : :obj:`str`
+            Date before which to search for messages.
+
+        Returns
+        -------
+        :obj:`str`
+            The appropriate query string
+        """
+        query = ""
+        if after_date:
+            query = query + f" after:{after_date}"
+        if before_date:
+            query = query + f" before:{before_date}"
+        return query
+
+    def render_message(self, message_id: str) -> dict[str, str]:
+        """Retrieve and render a message by ID#
 
         Gmail mnessages are stored in a JSON-like structure that must be
         parsed out to get the tasty nougat center.
 
         Parameters
         ----------
-        message_id : `str`
-            The ['id'] field of an entry in self.message_list
+        message_id : :obj:`str`
+            The ``['id']`` field of an entry in self.message_list
 
         Returns
         -------
-        `dict`
+        :obj:`dict`
             Dictionary containing the subject, sender, date, and body of
             the message.
         """
+        payload: collections.abc.Mapping[str, typing.Any] | None = None
         try:
             # Get the message, then start parsing (API: users.messages.get)
-            results = utils.safe_service_connect(
-                self.service.users().messages().get(userId="me", id=message_id).execute
+            results = _execute_gmail_request(
+                _gmail_users(self.service)
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute,
+                logger=self.logger,
             )
-            payload = results["payload"]
-            headers = payload["headers"]
+            payload = results.get("payload", {})
 
         # If exception, print message and return empty values
-        except (HttpError, ConnectionError) as error:
-            warnings.warn(
-                f"An error occurred within GetMessages.render_message():\n{error}"
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
+            johnnyfive.utils.proper_print(
+                f"An error occurred within GetMessages.render_message(): {error}",
+                "except",
+                self.logger,
             )
-            payload = None
-
         # Return empty dictionary if unsuccessful in connecting
         if not payload:
-            return dict(subject="", sender="", date="", body="")
+            return {"subject": "", "sender": "", "date": "", "body": ""}
 
-        # Look for Subject and Sender Email in the headers
-        for d in headers:
-            if d["name"] == "Subject":
-                subject = d["value"]
-            if d["name"] == "From":
-                sender = d["value"]
-            if d["name"] == "Date":
-                date = d["value"]
-
-        # The Body of the message is in Encrypted format -- decode it.
-        #  Get the data and decode it with base 64 decoder.
-        data = payload["body"]["data"]
-        data = data.replace("-", "+").replace("_", "/")
-        decoded_data = base64.b64decode(data)
-
-        # `decoded_data` is in lxml format; parse with BeautifulSoup
-        body = BeautifulSoup(decoded_data, "lxml").body()
-        body = body[0].text
+        headers = {
+            str(header.get("name", "")).lower(): str(header.get("value", ""))
+            for header in payload.get("headers", [])
+            if isinstance(header, collections.abc.Mapping)
+        }
 
         # Return a dictionary with the plain-text components of this message
-        return dict(subject=subject, sender=sender, date=date, body=body)
+        return {
+            "subject": headers.get("subject", ""),
+            "sender": headers.get("from", ""),
+            "date": headers.get("date", ""),
+            "body": self._extract_message_body(payload),
+        }
 
-    def update_msg_labels(self, message_id, add_labels=None, remove_labels=None):
-        """update_msg_labels Update the labels for a message by ID#
-
-        _extended_summary_
+    def update_messages_labels(
+        self,
+        message_ids: list[str],
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> None:
+        """Update labels for up to 1,000 messages in one Gmail API request.
 
         Parameters
         ----------
-        message_id : `str`
-            The ['id'] field of an entry in self.message_list
-        add_labels : `list`, optional
-            The list of label IDs to add to this message [Default: None]
-        remove_labels : `list`, optional
-            The list of label IDs to remove from this message [Default: None]
+        message_ids : list[str]
+            Gmail message IDs to modify. Gmail limits one batch to 1,000 IDs.
+        add_labels : list[str] | None, optional
+            Label names to add to every supplied message.
+        remove_labels : list[str] | None, optional
+            Label names to remove from every supplied message.
 
         Returns
         -------
-        `Any`
-            Uh, the Message object from Gmail... probably just return nothing?
+        None
+            Gmail's ``batchModify`` endpoint returns no response body.
+
+        Raises
+        ------
+        ValueError
+            If more than 1,000 message IDs are supplied.
+        johnnyfive.utils.J5Error
+            If the API request cannot be completed.
+        """
+        if not message_ids:
+            johnnyfive.utils.proper_print("No messages to change.", "info", self.logger)
+            return
+        if len(message_ids) > 1000:
+            raise ValueError("Gmail batchModify accepts at most 1,000 message IDs.")
+        if not add_labels and not remove_labels:
+            johnnyfive.utils.proper_print("No labels to change.", "info", self.logger)
+            return
+
+        body: dict[str, list[str]] = {"ids": message_ids}
+        if add_labels:
+            body["addLabelIds"] = [
+                label_id
+                for label in add_labels
+                if (label_id := self._label_id_from_name(label))
+            ]
+        if remove_labels:
+            body["removeLabelIds"] = [
+                label_id
+                for label in remove_labels
+                if (label_id := self._label_id_from_name(label))
+            ]
+
+        try:
+            _execute_gmail_request(
+                _gmail_users(self.service)
+                .messages()
+                .batchModify(userId="me", body=body)
+                .execute,
+                logger=self.logger,
+            )
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
+            johnnyfive.utils.proper_print(
+                f"An error occurred within GetMessages.update_messages_labels(): {error}",
+                "except",
+                self.logger,
+            )
+            raise johnnyfive.utils.J5Error("Unsuccessful connection") from error
+
+    def update_msg_labels(
+        self,
+        message_id: str,
+        add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
+    ) -> dict[str, typing.Any]:
+        """Update the labels for a message by ID#
+
+        Label names are resolved to Gmail label IDs before the update.
+
+        Parameters
+        ----------
+        message_id : :obj:`str`
+            The ``['id']`` field of an entry in self.message_list
+        add_labels : :obj:`list`, optional
+            The list of label IDs to add to this message [Default: None]
+        remove_labels : :obj:`list`, optional
+            The list of label IDs to remove from this message [Default: None]
+
         """
         if not add_labels and not remove_labels:
-            print("No labels to change.")
-            return None
+            johnnyfive.utils.proper_print("No labels to change.", "info", self.logger)
+            return {}
 
         # Convert Label Names to Label IDs
         add_label_ids, remove_label_ids = [], []
         if add_labels:
             for label in add_labels:
-                add_label_ids.append(self._lableId_from_labelName(label))
+                if label_id := self._label_id_from_name(label):
+                    add_label_ids.append(label_id)
         if remove_labels:
             for label in remove_labels:
-                remove_label_ids.append(self._lableId_from_labelName(label))
+                if label_id := self._label_id_from_name(label):
+                    remove_label_ids.append(label_id)
 
         # Build the label dictionary to send to Gmail
         body = {}
@@ -311,33 +503,105 @@ class GetMessages:
 
         try:
             # Modify message lables (API: users.messages.modify)
-            return utils.safe_service_connect(
-                self.service.users()
+            return _execute_gmail_request(
+                _gmail_users(self.service)
                 .messages()
                 .modify(userId="me", id=message_id, body=body)
-                .execute
+                .execute,
+                logger=self.logger,
             )
         # If exception, print message
-        except (HttpError, ConnectionError) as error:
-            warnings.warn(
-                f"An error occurred within GetMessages.update_msg_labels():\n{error}"
+        except (googleapiclient.errors.HttpError, ConnectionError) as error:
+            johnnyfive.utils.proper_print(
+                f"An error occurred within GetMessages.update_msg_labels(): {error}",
+                "except",
+                self.logger,
             )
-        # If unsuccessful in connecting, return None
-        return None
+        # If unsuccessful in connecting, raise
+        raise johnnyfive.utils.J5Error("Unsuccessful connection")
 
-    def _lableId_from_labelName(self, name):
-        """_lableId_from_labelName Get the Label ID from the Label Name
+    # Internal Helper Functions ==========================#
+    @classmethod
+    def _extract_message_body(
+        cls, payload: collections.abc.Mapping[str, typing.Any]
+    ) -> str:
+        """Extract readable inline text from a Gmail MIME payload.
 
-        _extended_summary_
+        Plain text is preferred when both ``text/plain`` and ``text/html``
+        alternatives are present. Container and attachment parts without
+        inline ``body.data`` are ignored.
 
         Parameters
         ----------
-        name : `str`
+        payload : Mapping[str, Any]
+            Top-level Gmail ``MessagePart`` payload.
+
+        Returns
+        -------
+        str
+            Decoded message text, or an empty string when no readable inline
+            text part exists.
+        """
+        parts = list(cls._iter_message_parts(payload))
+        for mime_type in ("text/plain", "text/html"):
+            for part in parts:
+                if part.get("mimeType", "").lower() != mime_type:
+                    continue
+                body = part.get("body", {})
+                data = (
+                    body.get("data")
+                    if isinstance(body, collections.abc.Mapping)
+                    else None
+                )
+                if not isinstance(data, str) or not data:
+                    continue
+
+                padded_data = data + "=" * (-len(data) % 4)
+                decoded = base64.urlsafe_b64decode(padded_data).decode(
+                    "utf-8", errors="replace"
+                )
+                if mime_type == "text/plain":
+                    return decoded
+                return BeautifulSoup(decoded, "lxml").get_text(
+                    separator="\n", strip=True
+                )
+
+        return ""
+
+    @staticmethod
+    def _iter_message_parts(
+        part: collections.abc.Mapping[str, typing.Any],
+    ) -> collections.abc.Iterator[collections.abc.Mapping[str, typing.Any]]:
+        """Yield a MIME part and all of its nested child parts.
+
+        Parameters
+        ----------
+        part : Mapping[str, Any]
+            Gmail ``MessagePart`` object to traverse.
+
+        Yields
+        ------
+        Mapping[str, Any]
+            Each MIME part in depth-first order.
+        """
+        yield part
+        for child in part.get("parts", []):
+            if isinstance(child, collections.abc.Mapping):
+                yield from GetMessages._iter_message_parts(child)
+
+    def _label_id_from_name(self, name: str | None) -> str | None:
+        """Get the Label ID from the Label Name
+
+        The label list is retrieved once and cached for the instance.
+
+        Parameters
+        ----------
+        name : :obj:`str`
             Label name
 
         Returns
         -------
-        `str`
+        :obj:`str`
             Label ID
         """
         if not self.service:
@@ -347,116 +611,317 @@ class GetMessages:
         if not self.label_list:
             # Get the list of labels for the "me" account (API: users.labels.list)
             try:
-                results = utils.safe_service_connect(
-                    self.service.users().labels().list(userId="me").execute
+                results = _execute_gmail_request(
+                    _gmail_users(self.service)
+                    .labels()
+                    .list(userId="me", fields="labels(id,name)")
+                    .execute,
+                    logger=self.logger,
                 )
                 self.label_list = results.get("labels", [])
-            except (HttpError, ConnectionError) as error:
-                warnings.warn(
-                    f"An error occurred within GetMessages._labelId_from_labelName():\n{error}"
+            except (googleapiclient.errors.HttpError, ConnectionError) as error:
+                johnnyfive.utils.proper_print(
+                    f"An error occurred within GetMessages._labelId_from_labelName(): {error}",
+                    "except",
+                    self.logger,
                 )
                 self.label_list = []
 
         # If there are no labels, return None
         if not self.label_list:
-            print("Whoops, no labels found.")
+            johnnyfive.utils.proper_print(
+                "Whoops, no labels found.", "warn", self.logger
+            )
             return None
 
         label_id = None
         # Go through the labels, and return the ID matching the name
         for label in self.label_list:
-            if label["name"] == name:
-                label_id = label["id"]
+            if label.get("name") == name:
+                label_id = label.get("id")
 
         return label_id
 
+    def _list_messages(self) -> None:
+        """Retrieve every page of messages matching the configured criteria.
+
+        Gmail returns at most 500 message IDs per ``messages.list`` response.
+        This method follows ``nextPageToken`` until the search is exhausted.
+
+        Returns
+        -------
+        None
+            The accumulated results are assigned to :attr:`message_list`.
+        """
+        page_token: str | None = None
+        while True:
+            request_args: dict[str, typing.Any] = {
+                "userId": "me",
+                "q": self.query,
+                "maxResults": 500,
+            }
+            if self.label_id:
+                request_args["labelIds"] = [self.label_id]
+            if page_token:
+                request_args["pageToken"] = page_token
+
+            try:
+                results = _execute_gmail_request(
+                    _gmail_users(self.service).messages().list(**request_args).execute,
+                    logger=self.logger,
+                )
+            except (googleapiclient.errors.HttpError, ConnectionError) as error:
+                johnnyfive.utils.proper_print(
+                    f"An error occurred within GetMessages._list_messages(): {error}",
+                    "except",
+                    self.logger,
+                )
+                return
+
+            self.message_list.extend(results.get("messages", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                return
+
+    def _list_messages_strict(self) -> None:
+        """Retrieve every page and propagate message-listing failures.
+
+        Returns
+        -------
+        None
+            The accumulated results are assigned to :attr:`message_list`.
+
+        Raises
+        ------
+        googleapiclient.errors.HttpError
+            If the request is non-retryable or retry attempts are exhausted.
+        """
+        page_token: str | None = None
+        while True:
+            request_args: dict[str, typing.Any] = {
+                "userId": "me",
+                "q": self.query,
+                "maxResults": 500,
+            }
+            if self.label_id:
+                request_args["labelIds"] = [self.label_id]
+            if page_token:
+                request_args["pageToken"] = page_token
+
+            results = _execute_gmail_request(
+                _gmail_users(self.service).messages().list(**request_args).execute,
+                logger=self.logger,
+            )
+            self.message_list.extend(results.get("messages", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                return
+
 
 # Newer OAUTH Routines =======================================================#
-def setup_gmail(interactive=False):
-    """setup_gmail Initialize the GMail API (via OAuth)
+def _execute_gmail_request(
+    execute: collections.abc.Callable[[], typing.Any],
+    logger: logging.Logger | None = None,
+) -> typing.Any:
+    """Execute an idempotent Gmail request with bounded exponential backoff.
 
-    [extended_summary]
+    Network failures continue to use :func:`johnnyfive.utils.safe_service_connect`.
+    This wrapper additionally retries Gmail rate-limit and transient server
+    responses.  It must not be used for ``messages.send`` because retrying a
+    request after a lost response can send a duplicate email.
+
+    Parameters
+    ----------
+    execute : Callable[[], Any]
+        Bound ``HttpRequest.execute`` method for an idempotent Gmail request.
+    logger : logging.Logger | None, optional
+        Logger used for retry notices.
+
+    Returns
+    -------
+    Any
+        Response returned by the Gmail client library.
+
+    Raises
+    ------
+    googleapiclient.errors.HttpError
+        If the request is non-retryable or all attempts are exhausted.
+    """
+    for attempt in range(_MAX_GMAIL_RETRIES):
+        try:
+            return johnnyfive.utils.safe_service_connect(execute, logger=logger)
+        except googleapiclient.errors.HttpError as error:
+            if (
+                not _is_retryable_gmail_error(error)
+                or attempt == _MAX_GMAIL_RETRIES - 1
+            ):
+                raise
+
+            delay = min(2**attempt, _MAX_BACKOFF_SECONDS) + random.uniform(0, 1)
+            johnnyfive.utils.proper_print(
+                "Gmail request was rate-limited or temporarily unavailable; "
+                f"retrying in {delay:.2f} seconds.",
+                "warn",
+                logger,
+            )
+            time.sleep(delay)
+
+    raise AssertionError("Gmail retry loop exited unexpectedly.")
+
+
+def _is_retryable_gmail_error(error: googleapiclient.errors.HttpError) -> bool:
+    """Determine whether a Gmail HTTP error represents a transient condition.
+
+    Parameters
+    ----------
+    error : googleapiclient.errors.HttpError
+        Gmail API error returned by a request.
+
+    Returns
+    -------
+    bool
+        ``True`` for 429 and 5xx responses, plus Gmail's 403 rate-limit
+        reasons; otherwise ``False``.
+    """
+    status = getattr(error.resp, "status", None)
+    if status in _RETRYABLE_HTTP_STATUSES:
+        return True
+    if status != 403:
+        return False
+
+    try:
+        payload = json.loads(error.content.decode("utf-8"))
+    except AttributeError, UnicodeDecodeError, json.JSONDecodeError:
+        return False
+
+    errors = payload.get("error", {}).get("errors", [])
+    return any(
+        isinstance(detail, collections.abc.Mapping)
+        and detail.get("reason") in _RETRYABLE_403_REASONS
+        for detail in errors
+    )
+
+
+def setup_gmail(
+    interactive: bool = False, logger: logging.Logger | None = None
+) -> googleapiclient.discovery.Resource:
+    """Initialize the GMail API (via OAuth)
+
+    Creates or refreshes the OAuth credentials used by the Gmail API.
 
     NOTE: The first time this is run on a machine, it will open a webpage for
           authorizing the API.  All subsequent runs will be silent.
 
     Parameters
     ----------
-    interactive : `bool`, optional
+    interactive : :obj:`bool`, optional
         Is this session interactive?  Relates to how to deal with toke
         refresh.  [Default: False]
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  (Default: None)
 
     Returns
     -------
-    `googleapiclient.discovery.Resource`
+    :obj:`~googleapiclient.discovery.Resource`
         The GMail API service object for consumption by other routines
     """
     # Read in the credential token
     creds = None
-    if os.path.exists(token_fn := utils.Paths.gmail_token):
-        creds = Credentials.from_authorized_user_file(token_fn, SCOPES)
+    token_path = pathlib.Path(johnnyfive.utils.Paths.gmail_token)
+    if token_path.exists():
+        try:
+            creds = google.oauth2.credentials.Credentials.from_authorized_user_file(
+                token_path, SCOPES
+            )
+        except json.decoder.JSONDecodeError as err:
+            raise johnnyfive.utils.J5Error(
+                f"Cannot parse Gmail token in {token_path}"
+            ) from err
 
     # If there are no (valid) credentials available...
     if not creds or not creds.valid:
-
         # If just expired, refresh and move on
         if creds and creds.expired and creds.refresh_token:
             try:
-                utils.safe_service_connect(creds.refresh, Request())
-            except (HttpError, ConnectionError) as error:
-                warnings.warn(f"An error occurred within setup_gmail():\n{error}")
+                johnnyfive.utils.safe_service_connect(
+                    creds.refresh,
+                    google.auth.transport.requests.Request(),
+                    logger=logger,
+                )
+            except (googleapiclient.errors.HttpError, ConnectionError) as err:
+                johnnyfive.utils.proper_print(
+                    f"An error occurred within setup_gmail(): {err}", "warn", logger
+                )
+            except google.auth.exceptions.RefreshError as err:
+                raise johnnyfive.utils.J5Error(
+                    f"{type(err).__name__} {err}\n"
+                    "https://stackoverflow.com/questions/10576386/"
+                    "invalid-grant-trying-to-get-oauth-token-from-google\n"
+                    "Try running j5_authenticate_gmail"
+                ) from err
 
         # If running in `interactive`, lauch browser to log in
         elif interactive:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                utils.Paths.gmail_creds, SCOPES
+            johnnyfive.utils.proper_print("If interactive...", "info", logger)
+            flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
+                johnnyfive.utils.Paths.gmail_creds, SCOPES
             )
             creds = flow.run_local_server(port=0)
 
         # Otherwise, raise an exception and specify to run interactively
         else:
-            raise ValueError(
-                "\nNo Gmail credentials found.  You may need to run:\n"
-                "j5_install_conf\n"
-                "or to authenticate user, run (NOT in a container):\n"
-                "j5_authenticate_gmail"
+            errmsg = (
+                "No Gmail credentials found.  You may need to run:\n"
+                "\t`j5_install_conf`\n"
+                "\tor to authenticate user, run (NOT in a container):\n"
+                "\t`j5_authenticate_gmail`"
             )
+            johnnyfive.utils.proper_print(
+                errmsg,
+                "error",
+                logger,
+            )
+            raise johnnyfive.utils.J5Error(errmsg)
 
         # Save the credentials for the next run
-        with open(token_fn, "w", encoding="utf-8") as token:
-            token.write(creds.to_json())
+        token_path.write_text(creds.to_json(), encoding="utf-8")
 
-    # Try building the GMail API service.  If error, print error & return None
+    # Try building the GMail API service.  If error, print error & raise
     try:
         # Call the Gmail API
-        return build("gmail", "v1", credentials=creds)
-    except (HttpError, UnknownApiNameOrVersion) as error:
+        johnnyfive.utils.proper_print("Calling the GMAIL API...", "info", logger)
+        return googleapiclient.discovery.build("gmail", "v1", credentials=creds)
+    except (
+        googleapiclient.errors.HttpError,
+        googleapiclient.errors.UnknownApiNameOrVersion,
+    ) as err:
         # TODO(developer) - Handle errors from gmail API.
-        warnings.warn(f"An error occurred within setup_gmail():\n{error}")
-        return None
+        johnnyfive.utils.proper_print(
+            f"An error occurred within setup_gmail():\n{err}", "except", logger
+        )
+        raise johnnyfive.utils.J5Error from err
 
 
-# Utility Functions ==========================================================#
-def build_query(after_date=None, before_date=None):
-    """build_query Build the query string for users.messages.list
+def authenticate_gmail(logger: logging.Logger | None = None) -> None:
+    """Console Script for authenticating Gmail
 
-    _extended_summary_
+    This is the command-line script for doing the interactive authentication
+    for Gmail needed to keep the tokens, etc. up to date.  When/If there is
+    a ``RefreshError`` kicked by one of the classes in this module, this script
+    needs to be run on the command line `interactively` to remove the existing
+    token and re-authenticate the user via a web browser.
+
+    Console script::
+
+        j5_authenticate_gmail
 
     Parameters
     ----------
-    after_date : `str`
-        Date after which to search for messages.
-    before_date : `str`
-        Date before which to search for messages.
-
-    Returns
-    -------
-    `str`
-        The appropriate query string
+    logger : :obj:`~logging.Logger`, optional
+        The logger object for logging  (Default: None)
     """
-    q = ""
-    if after_date:
-        q = q + f" after:{after_date}"
-    if before_date:
-        q = q + f" before:{before_date}"
-    return q
+    johnnyfive.utils.proper_print("Authenticate GMail...", "info", logger)
+    # Remove the existing GMAIL TOKEN file, if extant...
+    pathlib.Path(johnnyfive.utils.Paths.gmail_token).unlink(missing_ok=True)
+    # Run setup
+    setup_gmail(interactive=True)

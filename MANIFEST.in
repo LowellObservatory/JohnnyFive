@@ -1,8 +1,13 @@
 include README.md
 include LICENSE
-include setup.cfg
+include pyproject.toml
 
-recursive-include johnnyfive/config *
+include johnnyfive/config/README.md
+include johnnyfive/config/email.conf-TEMPLATE
+include johnnyfive/config/emailFooter.txt
+include johnnyfive/config/gmail_credentials.json-TEMPLATE
+include johnnyfive/config/gmail_token.json-TEMPLATE
+include johnnyfive/config/johnnyfive.conf-TEMPLATE
 recursive-include johnnyfive/images *
 
 global-exclude *.pyc *.o *.so *.DS_Store

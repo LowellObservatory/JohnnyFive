@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-#  This Source Code Form is subject to the terms of the Mozilla Public
-#  License, v. 2.0. If a copy of the MPL was not distributed with this
-#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 #
 #  Created on 7 Feb 2020
 #
@@ -15,13 +13,27 @@ Further description.
 
 from __future__ import division, print_function, absolute_import
 
+import configparser
+from pathlib import Path
+from typing import Mapping
+
 import twitter
 
-import ligmos
 
+def sendMessage(twit: Mapping[str, str], message: str) -> None:
+    """Post a message to Twitter using configured API credentials.
 
-def sendMessage(twit, message):
-    """
+    Parameters
+    ----------
+    twit : Mapping[str, str]
+        Twitter API credential mapping.
+    message : str
+        Message to post.
+
+    Returns
+    -------
+    None
+        The API response is printed for this prototype script.
     """
     api = twitter.Api(consumer_key=twit['apiKey'],
                       consumer_secret=twit['apiSecret'],
@@ -41,10 +53,11 @@ def sendMessage(twit, message):
 
 
 if __name__ == "__main__":
-    confFile = '../config/johnnyfive.conf'
-    conf = ligmos.utils.confparsers.rawParser(confFile)
+    conf_file = Path(__file__).parents[1] / "johnnyfive" / "config" / "johnnyfive.conf"
+    conf = configparser.ConfigParser()
+    conf.read(conf_file)
 
     # Quick and dirty for prototyping, will set up classes later
-    twit = conf['twitterSetup']
+    twit = conf["twitterSetup"]
 
     sendMessage(twit)
