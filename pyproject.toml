@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=80"]
+requires = ["setuptools>=80", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "johnnyfive"
-version = "0.3"
+dynamic = ["version"]
 description = "Helper utilities for Lowell Observatory code notifications"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -48,9 +48,16 @@ test = ["coverage>=7.0", "pytest>=8.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.black]
+target-version = ["py314"]
+
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["johnnyfive*"]
 namespaces = false
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 
 import pytest
@@ -11,9 +12,9 @@ from johnnyfive import utils
 
 def test_val_checks_converts_scalars_and_lists() -> None:
     """Convert configuration literals and comma-separated values."""
-    assert utils.valChecks(" true ") is True
-    assert utils.valChecks("None") is None
-    assert utils.valChecks("first, false, second") == ["first", False, "second"]
+    assert utils.val_checks(" true ") is True
+    assert utils.val_checks("None") is None
+    assert utils.val_checks("first, false, second") == ["first", False, "second"]
 
 
 def test_read_config_section_and_legacy_alias(
@@ -33,6 +34,20 @@ def test_read_config_section_and_legacy_alias(
     assert target.enabled is True
     assert target.custom == ["one", "two"]
     assert legacy_target.host == target.host
+
+
+def test_assign_conf_preserves_legacy_secret_keys_without_printing_them(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Map historical camel-case keys to safe Python attribute names quietly."""
+    config = configparser.ConfigParser()
+    config.read_string("[service]\napiKey = secret\ntoken = sensitive\n")
+
+    target = utils.assign_conf(config["service"], utils.AuthTarget, backfill=True)
+
+    assert target.api_key == "secret"
+    assert target.token == "sensitive"
+    assert capsys.readouterr().out == ""
 
 
 def test_read_config_section_reports_missing_section(
@@ -64,7 +79,7 @@ def test_install_conffiles_copies_requested_file(
 
 
 def test_safe_service_connect_retries_network_failure(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Retry transient connection failures and return the eventual result."""
     attempts = 0
@@ -79,5 +94,20 @@ def test_safe_service_connect_retries_network_failure(
     monkeypatch.setattr(utils.time, "sleep", lambda _: None)
 
     with pytest.warns(UserWarning, match="network error"):
-        assert utils.safe_service_connect(flaky_service, pause=0, nretries=2) == "connected"
+        assert (
+            utils.safe_service_connect(flaky_service, pause=0, nretries=2)
+            == "connected"
+        )
     assert attempts == 2
+
+
+@pytest.mark.parametrize(
+    ("pause", "nretries", "message"),
+    [(-1, 1, "pause must not be negative"), (0, 0, "nretries must be at least 1")],
+)
+def test_safe_service_connect_rejects_invalid_retry_configuration(
+    pause: int, nretries: int, message: str
+) -> None:
+    """Reject invalid retry controls before invoking a service callback."""
+    with pytest.raises(ValueError, match=message):
+        utils.safe_service_connect(lambda: None, pause=pause, nretries=nretries)

@@ -8,11 +8,9 @@
 
 """Init File"""
 
-
 # Imports for signal and log handling
-import os
-from types import TracebackType
-from typing import IO, Type
+from pathlib import Path
+from typing import IO
 import warnings
 
 __all__ = ["ConfluencePage", "GmailMessage", "GetMessages", "SlackChannel"]
@@ -26,7 +24,7 @@ from .utils import *  # noqa
 
 def short_warning(
     message: Warning | str,
-    category: Type[Warning],
+    category: type[Warning],
     filename: str,
     lineno: int,
     file: IO[str] | None = None,
@@ -54,7 +52,8 @@ def short_warning(
     str
         Formatted warning line.
     """
-    return f" {category.__name__}: {message} ({os.path.split(filename)[1]}:{lineno})\n"
+    del file, line
+    return f" {category.__name__}: {message} ({Path(filename).name}:{lineno})\n"
 
 
 warnings.formatwarning = short_warning

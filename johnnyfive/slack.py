@@ -6,176 +6,263 @@
 #
 #  @author: tbowers
 
-"""Slack communication module
+"""Slack communication helpers built on the current Slack Web API.
 
-Slack API Documentation:
-        https://slack.dev/python-slack-sdk/
-
-TODO: Properly deal with possible error states (try/except blocks)
-
+The module uses ``chat.postMessage``, cursor-paginated ``conversations.list``,
+and the external-upload flow exposed by :meth:`WebClient.files_upload_v2`.
 """
 
 # Built-In Libraries
+import collections.abc
 import pathlib
-from typing import Any
-import warnings
+import re
+import typing
 
 # 3rd Party Libraries
 import slack_sdk
 import slack_sdk.errors
+from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
+from slack_sdk.web import SlackResponse
+from slack_sdk.web.client import WebClient
 
 # Internal Imports
 import johnnyfive.utils
 
-
 # Set API Components
 __all__ = ["SlackChannel"]
 
+_CONVERSATION_ID_PATTERN = re.compile(r"[CDG][A-Z0-9]{8,}")
+_DEFAULT_CONVERSATION_TYPES = ("public_channel", "private_channel")
+
 
 class SlackChannel:
-    """SlackChannel Class for communicating with a Slack Channel
+    """Communicate with one Slack conversation.
 
-    Resolves a channel name and provides message and file operations.
+    A Slack conversation ID avoids a discovery request. Otherwise, the
+    supplied name is resolved using every page returned by
+    ``conversations.list``.
 
     Parameters
     ----------
-    channel_name : :obj:`str`
-        Slack Channel into which to post
+    channel_name : str
+        Slack conversation name or ID.
+    conversation_types : collections.abc.Sequence[str], optional
+        Conversation types searched when ``channel_name`` is a name. The
+        default searches public and private channels.
+
+    Raises
+    ------
+    johnnyfive.utils.J5Error
+        If Slack rejects a request or the named conversation is unavailable to
+        the configured bot token.
     """
 
-    def __init__(self, channel_name: str) -> None:
-        """Initialize a channel client.
+    def __init__(
+        self,
+        channel_name: str,
+        conversation_types: collections.abc.Sequence[str] = _DEFAULT_CONVERSATION_TYPES,
+    ) -> None:
+        """Initialize a Slack client and resolve the target conversation.
 
         Parameters
         ----------
         channel_name : str
-            Human-readable Slack channel name.
+            Slack conversation name or ID.
+        conversation_types : collections.abc.Sequence[str], optional
+            Conversation types searched for a conversation name.
         """
         self.client = setup_slack()
+        self.conversation_types = tuple(conversation_types)
+        self.channel_id = (
+            channel_name
+            if _CONVERSATION_ID_PATTERN.fullmatch(channel_name)
+            else self._read_channels(channel_name)
+        )
 
-        # Get the channel ID
-        self.channel_id = self._read_channels(channel_name)
+    def send_message(
+        self,
+        message: str,
+        *,
+        blocks: list[dict[str, typing.Any]] | None = None,
+        thread_ts: str | None = None,
+    ) -> SlackResponse:
+        """Send a message to the configured conversation.
 
-    def send_message(self, message: str) -> Any:
-        """Send a (text only) message to the channel
-
-        The Slack API response is returned unchanged.
-
-        Parameters
-        ----------
-        message : :obj:`str` or `blocks[]` array
-            The message to send to the Slack channel
-
-        Returns
-        -------
-        :obj:`~typing.Any`
-            The response from Slack
-        """
-        response = None
-        try:
-            # Call the conversations.list method using the WebClient
-            response = johnnyfive.utils.safe_service_connect(
-                self.client.chat_postMessage,
-                channel=self.channel_id,
-                text=message,
-                # You could also use a blocks[] array to send richer content
-            )
-            # Print result, which includes information about the message (like TS)
-            # print(result)
-        except slack_sdk.errors.SlackApiError as error:
-            warnings.warn(
-                f"An error occurred within SlackChannel.send_message():\n{error}"
-            )
-        return response
-
-    def upload_file(self, file: str | pathlib.Path, title: str | None = None) -> Any:
-        """Upload a file to the channel
-
-        The Slack API response is returned unchanged.
+        ``message`` is always sent as the plain-text accessibility fallback
+        when Block Kit ``blocks`` are supplied.
 
         Parameters
         ----------
-        file : :obj:`str` or :obj:`~pathlib.Path`
-            The (path and) filename of the file to be uploaded.
-        title : :obj:`str`, optional
-            The title for the file posted  (Default: None)
+        message : str
+            Plain-text message or accessibility fallback for ``blocks``.
+        blocks : list[dict[str, typing.Any]], optional
+            Slack Block Kit blocks to include in the message.
+        thread_ts : str, optional
+            Parent message timestamp for a threaded reply.
 
         Returns
         -------
-        :obj:`~typing.Any`
-            The response from Slack
-        """
-        response = None
-        try:
-            response = johnnyfive.utils.safe_service_connect(
-                self.client.files_upload,
-                channels=self.channel_id,
-                file=file,
-                title=title,
-            )
-        except slack_sdk.errors.SlackApiError as error:
-            warnings.warn(
-                f"An error occurred within SlackChannel.upload_file():\n{error}"
-            )
-        return response
+        slack_sdk.web.SlackResponse
+            Slack's response describing the posted message.
 
-    def _read_channels(self, name: str) -> str | None:
-        """Return the Channel ID for the names channel
+        Raises
+        ------
+        johnnyfive.utils.J5Error
+            If Slack rejects the message request.
+        """
+        kwargs: dict[str, typing.Any] = {"channel": self.channel_id, "text": message}
+        if blocks is not None:
+            kwargs["blocks"] = blocks
+        if thread_ts is not None:
+            kwargs["thread_ts"] = thread_ts
+        return self._call(
+            "send_message", self.client.chat_postMessage, retry_network=False, **kwargs
+        )
+
+    def upload_file(
+        self,
+        file: str | pathlib.Path,
+        title: str | None = None,
+        *,
+        initial_comment: str | None = None,
+        thread_ts: str | None = None,
+    ) -> SlackResponse:
+        """Upload a file using Slack's current external-upload API flow.
 
         Parameters
         ----------
-        name : :obj:`str`
-            The name of the channel
+        file : str or pathlib.Path
+            Path to the file to upload.
+        title : str, optional
+            Title displayed for the uploaded file.
+        initial_comment : str, optional
+            Message posted alongside the file.
+        thread_ts : str, optional
+            Parent message timestamp for posting the file in a thread.
 
         Returns
         -------
-        :obj:`str`
-            The desired Channel ID
+        slack_sdk.web.SlackResponse
+            Slack's response describing the completed upload.
+
+        Raises
+        ------
+        johnnyfive.utils.J5Error
+            If Slack rejects the upload request.
         """
-        conversation_id = None
+        return self._call(
+            "upload_file",
+            self.client.files_upload_v2,
+            channel=self.channel_id,
+            file=file,
+            title=title,
+            initial_comment=initial_comment,
+            thread_ts=thread_ts,
+            retry_network=False,
+        )
 
+    def _read_channels(self, name: str) -> str:
+        """Resolve a conversation name through cursor-paginated discovery.
+
+        Parameters
+        ----------
+        name : str
+            Exact Slack conversation name to resolve.
+
+        Returns
+        -------
+        str
+            The Slack conversation ID.
+
+        Raises
+        ------
+        johnnyfive.utils.J5Error
+            If no visible conversation has the requested name or Slack rejects
+            the lookup.
+        """
+        cursor: str | None = None
+        while True:
+            result = self._call(
+                "_read_channels",
+                self.client.conversations_list,
+                cursor=cursor,
+                limit=200,
+                types=self.conversation_types,
+            )
+            for channel in result.get("channels", []):
+                if channel.get("name") == name and isinstance(channel.get("id"), str):
+                    return channel["id"]
+
+            metadata = result.get("response_metadata", {})
+            cursor = metadata.get("next_cursor", "") if metadata else ""
+            if not cursor:
+                break
+
+        raise johnnyfive.utils.J5Error(
+            f"Slack conversation {name!r} was not found or is not visible to the bot."
+        )
+
+    def _call(
+        self,
+        operation: str,
+        func: collections.abc.Callable[..., SlackResponse],
+        retry_network: bool = True,
+        **kwargs: typing.Any,
+    ) -> SlackResponse:
+        """Execute one Slack Web API request and normalize failures.
+
+        Parameters
+        ----------
+        operation : str
+            Name of the enclosing public or private operation.
+        func : collections.abc.Callable[..., slack_sdk.web.SlackResponse]
+            Slack client method to invoke.
+        retry_network : bool, optional
+            Whether J5 should retry a network failure. Disable this for
+            non-idempotent requests. [Default: True]
+        **kwargs : typing.Any
+            Keyword arguments forwarded to ``func``.
+
+        Returns
+        -------
+        slack_sdk.web.SlackResponse
+            Successful Slack Web API response.
+
+        Raises
+        ------
+        johnnyfive.utils.J5Error
+            If the request is rejected by Slack.
+        """
         try:
-            # Call the conversations.list() method using the WebClient
-            result = johnnyfive.utils.safe_service_connect(
-                self.client.conversations_list
+            return typing.cast(
+                SlackResponse,
+                johnnyfive.utils.safe_service_connect(
+                    func, nretries=5 if retry_network else 1, **kwargs
+                ),
             )
-            for _ in result:
-                if conversation_id is not None:
-                    break
-                for channel in result["channels"]:
-                    if channel["name"] == name:
-                        conversation_id = channel["id"]
-                        break
-
         except slack_sdk.errors.SlackApiError as error:
-            warnings.warn(
-                f"An error occurred within SlackChannel._read_channels():\n{error}"
+            johnnyfive.utils.proper_print(
+                f"SlackChannel.{operation}() failed: {error}", "except"
             )
-
-        # Return the conversation ID
-        return conversation_id
+            raise johnnyfive.utils.J5Error(
+                f"Slack request failed during {operation}."
+            ) from error
 
 
 # Internal Functions =========================================================#
-def setup_slack() -> slack_sdk.web.client.WebClient | None:
-    """Setup the Slack WebClient for posting
+def setup_slack() -> WebClient:
+    """Create a Slack client with rate-limit-aware retries.
 
-    Reads the configured token and creates a client for Slack API calls.
+    The configuration's existing ``password`` field remains supported for bot
+    tokens. A ``token`` field, when present, takes precedence.
 
     Returns
     -------
-    client : :obj:`~slack_sdk.web.client.WebClient`
-        The WebClient object needed for reading and writing
+    slack_sdk.web.client.WebClient
+        Configured Slack Web API client.
     """
-    # Read the setup
     setup = johnnyfive.utils.read_config_section("slackSetup")
-
-    # SlackWebClient instantiates a client that can call API methods
-    # When using Bolt, you can use either `app.client` or the `client` passed to listeners.
-    try:
-        client = slack_sdk.WebClient(token=setup.password)
-    except slack_sdk.errors.SlackApiError as error:
-        warnings.warn(f"An error occurred within setup_slack():\n{error}")
-        client = None
-
+    token = getattr(setup, "token", None) or setup.password
+    client = slack_sdk.WebClient(token=token)
+    client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=2))
     return client

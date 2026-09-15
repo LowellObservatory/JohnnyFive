@@ -16,9 +16,10 @@ the package.
 
 # Built-In Libraries
 import argparse
+import collections.abc
 import configparser
 import dataclasses
-from importlib import resources
+import importlib.resources
 import logging
 import pathlib
 import shutil
@@ -45,6 +46,15 @@ __all__ = [
     "safe_service_connect",
 ]
 
+type ConfigValue = str | int | bool | None | list[str | bool | None]
+type LogLevel = typing.Literal["info", "warn", "error", "except"]
+_CONFIG_FIELD_ALIASES = {
+    "api_key": "apikey",
+    "api_secret": "apisecret",
+    "token_key": "tokenkey",
+    "token_secret": "tokensecret",
+}
+
 
 # Define error classes
 class J5Error(Exception):
@@ -63,54 +73,47 @@ class Paths:
     """
 
     # Main data & config directories
-    config = resources.files("johnnyfive") / "config"
-    images = resources.files("johnnyfive") / "images"
+    config = importlib.resources.files("johnnyfive") / "config"
+    images = importlib.resources.files("johnnyfive") / "images"
     gmail_token = config / "gmail_token.json"
     gmail_creds = config / "gmail_credentials.json"
 
 
 @dataclasses.dataclass
-class baseTarget:
-    """
-    Empty class that gets inherited by basically everything since it contains
-    most/all the usual stuff you'd need to connect to a ... thing.
-    """
+class BaseTarget:
+    """Configuration values shared by J5 service integrations."""
 
-    def __init__(self) -> None:
-        """Initialize a configuration target with common connection fields."""
-        self.name = None
-        self.host = None
-        self.port = 22
-        self.type = None
-        self.user = None
-        self.protocol = None
-        self.password = None
-        self.enabled = False
+    name: ConfigValue = None
+    host: ConfigValue = None
+    port: ConfigValue = 22
+    type: ConfigValue = None
+    user: ConfigValue = None
+    protocol: ConfigValue = None
+    password: ConfigValue = None
+    enabled: ConfigValue = False
 
 
 @dataclasses.dataclass
-class authTarget(baseTarget):
+class AuthTarget(BaseTarget):
     """Configuration target with the credentials used by JohnnyFive.
 
     Additional values in the configuration section are retained as attributes.
     """
 
-    def __init__(self) -> None:
-        """Initialize a configuration target with credential fields."""
-        super().__init__()
-        self.access_token = None
-        self.apiKey = None
-        self.apiSecret = None
-        self.tokenKey = None
-        self.tokenSecret = None
+    access_token: ConfigValue = None
+    token: ConfigValue = None
+    api_key: ConfigValue = None
+    api_secret: ConfigValue = None
+    token_key: ConfigValue = None
+    token_secret: ConfigValue = None
 
 
-def assignConf(
+def assign_conf(
     conf: configparser.SectionProxy,
-    obj: type[baseTarget],
+    obj: type[BaseTarget],
     backfill: bool = False,
     debug: bool = False,
-) -> baseTarget:
+) -> BaseTarget:
     """Copy parsed configuration values to a target instance.
 
     Given an arbitrary class reference and a parsed configuration file (conf),
@@ -128,7 +131,7 @@ def assignConf(
     ----------
     conf : configparser.SectionProxy
         Configuration section to convert.
-    obj : type[baseTarget]
+    obj : type[BaseTarget]
         Target class to instantiate.
     backfill : bool, optional
         Whether to retain keys not predefined by ``obj``.
@@ -137,54 +140,35 @@ def assignConf(
 
     Returns
     -------
-    baseTarget
+    BaseTarget
         Populated configuration target.
     """
     # Make an instance of our given object/class
     classy = obj()
 
-    # Get the list of parameters in the instance (classy) given class (obj)
-    oparams = list(classy.__dict__.keys())
-
-    # Now do the same for the configuration object (conf)
-    cparams = list(conf.keys())
-
-    # Check to see if there are any that are in the class but not in the conf
-    #   If there are, keydiffs will != [] and they'll be shoved into the class
-    #   with a warning if backfill is True, otherwise they're ignored entirely
-    keydiffs = list(set(cparams) - set(oparams))
-
+    consumed_keys: set[str] = set()
     for key in classy.__dict__:
         try:
-            # Remember: key is from the input class here
-            kval = conf[key]
-
-            # Check to see if it's a comma-separated-list, and other parsing
-            #   stuff happens to check for none/true/false
-            nkval = valChecks(kval)
-
-            # Actually set the parameter (key) in the class (classy)
-            #   to the value that we found/cleaned up (nkval)
-            setattr(classy, key, nkval)
+            config_key = key if key in conf else _CONFIG_FIELD_ALIASES.get(key, key)
+            value = conf[config_key]
+            consumed_keys.add(config_key)
+            setattr(classy, key, val_checks(value))
         except KeyError:
-            # This means that
-            if debug is True:
-                print("Missing expected configuration key %s" % (key))
-            # Just set it to None and move on with our lives
+            if debug:
+                print(f"Missing expected configuration key {key}")
             setattr(classy, key, None)
 
-    if backfill is True:
-        # If there are any, that is
-        if keydiffs != []:
-            for orphan in keydiffs:
-                orphVal = valChecks(conf[orphan])
-                print("Setting orphan object key %s to %s" % (orphan, orphVal))
-                setattr(classy, orphan, orphVal)
+    if backfill:
+        for orphan in set(conf.keys()) - consumed_keys:
+            if debug:
+                orphan_value = val_checks(conf[orphan])
+                print(f"Setting orphan object key {orphan} to {orphan_value}")
+            setattr(classy, orphan, val_checks(conf[orphan]))
 
     return classy
 
 
-def install_conffiles(args: typing.Sequence[str] | None = None) -> None:
+def install_conffiles(args: collections.abc.Sequence[str] | None = None) -> None:
     """Console Script for installing configuration files
 
     This function is designed to install the (secret) configuration files
@@ -223,9 +207,7 @@ def install_conffiles(args: typing.Sequence[str] | None = None) -> None:
             shutil.copy2(file, Paths.config)
 
 
-def read_config_section(
-    confname: str, conffile: str = "johnnyfive.conf"
-) -> baseTarget:
+def read_config_section(confname: str, conffile: str = "johnnyfive.conf") -> BaseTarget:
     """Read a JohnnyFive configuration section into an attribute object.
 
     Parameters
@@ -237,19 +219,19 @@ def read_config_section(
 
     Returns
     -------
-    :class:`baseTarget`
-        An object with arrtibutes matching the keys in the associated
+    :class:`BaseTarget`
+        An object with attributes matching the keys in the associated
         configuration file.
     """
     try:
-        config = rawParser(Paths.config / conffile)
-        return assignConf(config[confname], authTarget, backfill=True)
+        config = raw_parser(Paths.config / conffile)
+        return assign_conf(config[confname], AuthTarget, backfill=True)
     except KeyError as err:
         raise J5Error(
             f"Configuration key {confname} not present.\n"
             "Try installing configuration files via j5 utilities."
         ) from err
-    except Exception as err:
+    except (OSError, configparser.Error) as err:
         raise J5Error(
             "Unexpected error occurred while reading in configuration file.\n"
             f"\n{type(err).__name__}  {err.args}"
@@ -258,7 +240,7 @@ def read_config_section(
 
 def read_ligmos_conffiles(
     confname: str, conffile: str = "johnnyfive.conf"
-) -> baseTarget:
+) -> BaseTarget:
     """Backward-compatible alias for :func:`read_config_section`.
 
     JohnnyFive no longer depends on ligmos; new code should use
@@ -267,7 +249,9 @@ def read_ligmos_conffiles(
     return read_config_section(confname, conffile)
 
 
-def print_dict(dd: dict[str, typing.Any], indent: int = 0, di: int = 4) -> None:
+def print_dict(
+    dd: collections.abc.Mapping[str, typing.Any], indent: int = 0, di: int = 4
+) -> None:
     """Print a dictionary in tree format
 
     You know how sometimes you get these nested dictionaries, and they're a
@@ -286,13 +270,13 @@ def print_dict(dd: dict[str, typing.Any], indent: int = 0, di: int = 4) -> None:
     di: :obj:`int`, optional
         The incremental indentation for each layer of the tree [Default: 4]
     """
-    if not isinstance(dd, dict):
+    if not isinstance(dd, collections.abc.Mapping):
         print("Input not a dictionary.")
         return
 
     for key, value in dd.items():
         # Recursive for nested dictionaries
-        if isinstance(value, dict):
+        if isinstance(value, collections.abc.Mapping):
             print(f"{' '*indent}{key:12s}:")
             print_dict(value, indent + di)
         else:
@@ -300,7 +284,7 @@ def print_dict(dd: dict[str, typing.Any], indent: int = 0, di: int = 4) -> None:
 
 
 def proper_print(
-    msg: str, level: str, logger: logging.Logger | None = None
+    msg: str, level: LogLevel, logger: logging.Logger | None = None
 ) -> None:
     """Log if logger, else print to stdout
 
@@ -310,7 +294,7 @@ def proper_print(
     ----------
     msg : :obj:`str`
         The message to convey
-    level : ;obj:`str`
+    level : {"info", "warn", "error", "except"}
         The logging level.  One of [``info``,``warn``,``except``]
     logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
@@ -335,9 +319,11 @@ def proper_print(
             warnings.warn(f"EXCEPTION: {msg}")
         else:
             logger.exception(msg)
+    else:
+        raise ValueError(f"Unsupported logging level: {level!r}")
 
 
-def rawParser(confname: str | pathlib.Path) -> configparser.ConfigParser:
+def raw_parser(confname: str | pathlib.Path) -> configparser.ConfigParser:
     """Parse an INI-style configuration file.
 
     Parameters
@@ -350,19 +336,18 @@ def rawParser(confname: str | pathlib.Path) -> configparser.ConfigParser:
     configparser.ConfigParser
         Parsed configuration, which is empty if the file cannot be opened.
     """
-    config = None
+    config = configparser.ConfigParser()
     try:
-        config = configparser.ConfigParser()
-        config.read_file(open(confname, "r"))
-    except IOError as err:
-        print("ERROR: Configuration file %s not found!" % (confname))
-        print(str(err))
+        with open(confname, "r", encoding="utf-8") as f_obj:
+            config.read_file(f_obj)
+    except OSError as err:
+        raise J5Error(f"Configuration file {confname} could not be read.") from err
 
     return config
 
 
 def safe_service_connect(
-    func: typing.Callable[..., typing.Any],
+    func: collections.abc.Callable[..., typing.Any],
     *args: typing.Any,
     pause: int | float = 5,
     nretries: int = 5,
@@ -396,6 +381,13 @@ def safe_service_connect(
         The return value of ``func`` -- or None if unable to run ``func``
     """
 
+    if nretries < 1:
+        raise ValueError("nretries must be at least 1.")
+    if pause < 0:
+        raise ValueError("pause must not be negative.")
+
+    function_name = getattr(func, "__name__", func.__class__.__name__)
+
     # Now, for the actual function...
     for i in range(1, nretries + 1):
         # Nominal function return
@@ -411,7 +403,7 @@ def safe_service_connect(
             requests.exceptions.ReadTimeout,
         ) as err:
             proper_print(
-                f"Execution of `{func.__name__}` failed because of network error."
+                f"Execution of `{function_name}` failed because of network error."
                 f"\n{err}",
                 "error",
                 logger,
@@ -435,7 +427,7 @@ def safe_service_connect(
         # This is for a Service error (premissions, etc.), no retry
         except requests.exceptions.HTTPError as err:
             proper_print(
-                f"Execution of `{func.__name__}` failed because of HTTP error."
+                f"Execution of `{function_name}` failed because of HTTP error."
                 f"\n{type(err).__name__}  {err.args}",
                 "error",
                 logger,
@@ -486,7 +478,7 @@ def safe_service_connect(
     raise J5Error("Unspecified error")
 
 
-def valChecks(kval: str) -> str | bool | None | list[str | bool | None]:
+def val_checks(kval: str) -> str | bool | None | list[str | bool | None]:
     """Convert comma-separated configuration values to Python values.
 
     Parameters

@@ -13,8 +13,9 @@ Confluence API Documentation:
 """
 
 # Built-In Libraries
+import collections.abc
 import logging
-from typing import Any
+import typing
 
 # 3rd Party Libraries
 from atlassian.confluence import ConfluenceServer
@@ -22,7 +23,6 @@ import requests
 
 # Internal Imports
 import johnnyfive.utils
-
 
 # Set API Components
 __all__ = ["ConfluencePage"]
@@ -44,7 +44,9 @@ class ConfluencePage:
         reinstantiating a new Confluence object for communication and
         authentication.  [Default: None]
     use_oauth : :obj:`bool`, optional
-        Use OAUTH authentication instead of username/password?  [Default: False]
+        Use bearer-token authentication instead of username/password. The
+        existing name is retained for compatibility and accepts a Data Center
+        OAuth 2.0 access token or personal access token. [Default: False]
     logger : :obj:`~logging.Logger`, optional
         The logger object for logging  [Default: None]
     """
@@ -76,6 +78,9 @@ class ConfluencePage:
         self.space = space
         self.title = page_title
         self.logger = logger
+        self.exists = False
+        self.page_id: str | None = None
+        self.attachment_url: str | None = None
 
         # Set up the Confluence object instance
         self.confluence = (
@@ -160,7 +165,10 @@ class ConfluencePage:
         )
 
     def create(
-        self, page_body: str, parent_id: str | None = None, representation: str = "wiki"
+        self,
+        page_body: str,
+        parent_id: str | None = None,
+        representation: str = "storage",
     ) -> None:
         """Create a brand new Confluence page
 
@@ -174,8 +182,8 @@ class ConfluencePage:
             The parent page to place this under.  If none given, the new page
             will be created at the root of ``self.space``. [Default: None]
         representation : :obj:`str`, optional
-            The Confluence strorage representation to use.  [Default: "wiki"]
-            Use "storage" for XML-based documents
+            The Confluence body representation to use. Storage XHTML is the
+            default and recommended representation. [Default: "storage"]
         """
         if not self._check_perm("EDITSPACE", "create a page"):
             return
@@ -187,18 +195,23 @@ class ConfluencePage:
             )
             return
 
-        johnnyfive.utils.safe_service_connect(
+        response = johnnyfive.utils.safe_service_connect(
             self.confluence.create_page,
             self.space,
             self.title,
             page_body,
             parent_id=parent_id,
             representation=representation,
-            editor="v1",
             logger=self.logger,
         )
-        # Set the instance metadata (exists, page_id, etc.)
-        self._set_metadata()
+        # A successful create response already contains the new page ID. Avoid
+        # a second title lookup unless a nonstandard response omits it.
+        if isinstance(response, collections.abc.Mapping) and isinstance(
+            response.get("id"), str
+        ):
+            self._set_metadata_from_page_id(response["id"])
+        else:
+            self._set_metadata()
 
     def delete_attachment(self, filename: str) -> None:
         """Delete an attachment from this page
@@ -217,34 +230,92 @@ class ConfluencePage:
         if not self._check_perm("REMOVEATTACHMENT", "remove an attachment"):
             return
 
-        johnnyfive.utils.safe_service_connect(
-            self.confluence.delete_attachment,
+        attachments = johnnyfive.utils.safe_service_connect(
+            self.confluence.get_attachments_from_content,
             self.page_id,
-            filename,
+            filename=filename,
+            limit=2,
             logger=self.logger,
         )
+        results = (
+            attachments.get("results", [])
+            if isinstance(attachments, collections.abc.Mapping)
+            else []
+        )
+        matching_attachments = [
+            attachment
+            for attachment in results
+            if isinstance(attachment, collections.abc.Mapping)
+            and attachment.get("title") == filename
+        ]
+        if not matching_attachments:
+            johnnyfive.utils.proper_print(
+                f"Attachment {filename!r} was not found on page {self.page_id}.",
+                "warn",
+                self.logger,
+            )
+            return
+        if len(matching_attachments) > 1:
+            raise johnnyfive.utils.J5Error(
+                f"More than one current attachment is named {filename!r}."
+            )
 
-    def get_page_attachments(self, limit: int = 200) -> list[object]:
+        attachment_id = matching_attachments[0].get("id")
+        if not isinstance(attachment_id, str):
+            raise johnnyfive.utils.J5Error(
+                f"Attachment {filename!r} did not include a REST content ID."
+            )
+        # Supplying only an attachment content ID uses the client's REST delete
+        # path, rather than its legacy json/removeattachment.action helper.
+        johnnyfive.utils.safe_service_connect(
+            self.confluence.delete_attachment, attachment_id, logger=self.logger
+        )
+
+    def get_page_attachments(
+        self, limit: int = 200, all_pages: bool = False
+    ) -> list[dict[str, typing.Any]]:
         """Retrieve the page attachments
 
-        Return a list of page attachment IDs, up to ``limit`` in length.
+        Return REST attachment metadata, up to ``limit`` in length. Set
+        ``all_pages`` to retrieve every attachment in pages of ``limit``.
 
         Parameters
         ----------
         limit : :obj:`int`, optional
-            The number of attachments to return  (Default: 200)
+            Number of attachments per REST page and, unless ``all_pages`` is
+            set, the maximum total to return. [Default: 200]
+        all_pages : :obj:`bool`, optional
+            Whether to follow REST pagination until every attachment is
+            collected. [Default: False]
 
         Returns
         -------
-        :obj:`list`
-            List of Confluence attachment IDs
+        list[dict[str, Any]]
+            REST attachment objects.
         """
-        return johnnyfive.utils.safe_service_connect(
-            self.confluence.get_attachments_from_content,
-            self.page_id,
-            limit=limit,
-            logger=self.logger,
-        )
+        if limit < 1:
+            raise ValueError("Attachment page limit must be positive.")
+
+        attachments: list[dict[str, typing.Any]] = []
+        start = 0
+        while True:
+            response = johnnyfive.utils.safe_service_connect(
+                self.confluence.get_attachments_from_content,
+                self.page_id,
+                start=start,
+                limit=limit,
+                logger=self.logger,
+            )
+            results = (
+                response.get("results", [])
+                if isinstance(response, collections.abc.Mapping)
+                else []
+            )
+            page = [item for item in results if isinstance(item, dict)]
+            attachments.extend(page)
+            if not all_pages or len(page) < limit:
+                return attachments
+            start += len(page)
 
     def get_page_contents(self) -> str:
         """Retrieve the page contents in HTML-ish format
@@ -278,9 +349,16 @@ class ConfluencePage:
         johnnyfive.utils.safe_service_connect(
             self.confluence.remove_page, self.page_id, logger=self.logger
         )
-        self._set_metadata()
+        self._set_metadata_from_page_id(None)
 
-    def update_contents(self, body: str) -> None:
+    def update_contents(
+        self,
+        body: str,
+        representation: str = "storage",
+        minor_edit: bool = False,
+        version_comment: str | None = None,
+        always_update: bool = False,
+    ) -> None:
         """Update the contents of the Confluence page
 
         Update the page by replacing the existing content with new.  The idea
@@ -291,6 +369,15 @@ class ConfluencePage:
         ----------
         body : :obj:`str`
             The new page contents to upload to Confluence.
+        representation : str, optional
+            Body representation supplied with ``body``. [Default: "storage"]
+        minor_edit : bool, optional
+            Whether Confluence should mark this as a minor edit. [Default: False]
+        version_comment : str | None, optional
+            Version-history comment for the update. [Default: None]
+        always_update : bool, optional
+            Skip the client content equality check and always create a new
+            version. [Default: False]
         """
         if not self._check_perm("EDITSPACE", "update a page"):
             return
@@ -300,9 +387,14 @@ class ConfluencePage:
             self.page_id,
             self.title,
             body,
+            representation=representation,
+            minor_edit=minor_edit,
+            version_comment=version_comment,
+            always_update=always_update,
             logger=self.logger,
         )
 
+    # Internal Helper Functions ==========================#
     def _check_perm(self, perm_key: str, perm_action: str) -> bool:
         """Check the premissions dictionary for a particular action
 
@@ -352,21 +444,47 @@ class ConfluencePage:
         Especially after a page is created or deleted, this method updates the
         various instance attributes to keep current.
         """
-        self.exists = johnnyfive.utils.safe_service_connect(
-            self.confluence.page_exists, self.space, self.title, logger=self.logger
+        response = johnnyfive.utils.safe_service_connect(
+            self.confluence.get_page_by_title,
+            self.space,
+            self.title,
+            limit=2,
+            logger=self.logger,
         )
-
-        # Page-Specific Information
-        self.page_id = (
-            None
-            if not self.exists
-            else johnnyfive.utils.safe_service_connect(
-                self.confluence.get_page_id, self.space, self.title, logger=self.logger
+        results = (
+            response.get("results", [])
+            if isinstance(response, collections.abc.Mapping)
+            else []
+        )
+        if len(results) > 1:
+            raise johnnyfive.utils.J5Error(
+                f"Multiple pages named {self.title!r} exist in space {self.space!r}."
             )
+        page_id = (
+            results[0].get("id")
+            if results and isinstance(results[0], collections.abc.Mapping)
+            else None
         )
+        self._set_metadata_from_page_id(page_id if isinstance(page_id, str) else None)
+
+    def _set_metadata_from_page_id(self, page_id: str | None) -> None:
+        """Set page metadata from a known REST content ID.
+
+        Parameters
+        ----------
+        page_id : str | None
+            Page content ID returned by Confluence, or ``None`` when absent.
+
+        Returns
+        -------
+        None
+            Instance metadata is updated in place.
+        """
+        self.exists = page_id is not None
+        self.page_id = page_id
         self.attachment_url = (
             None
-            if not self.exists
+            if self.page_id is None
             else f"{self.confluence.url}download/attachments/{self.page_id}/"
         )
 
@@ -391,16 +509,17 @@ def setup_confluence(use_oauth: bool = False) -> ConfluenceServer:
     """Set up the Confluence class instance
 
     Reads in the confluence.conf configuration file, which contains the URL,
-    username, and password (and/or OAUTH info).
+    username, password, and/or bearer-token information.
 
     .. note::
-        For Confluence install version >= 7.9, can use OAUTH for
-        authentication instead of username/password.
+        Confluence Data Center supports personal access tokens from 7.9 and
+        OAuth 2.0 access tokens from 7.17. Both use a bearer header.
 
     Parameters
     ----------
     use_oauth : :obj:`bool`, optional
-        Use the OAUTH authentication scheme?  [Default: False]
+        Use bearer-token authentication. The parameter name is retained for
+        compatibility. [Default: False]
 
     Returns
     -------
@@ -410,7 +529,7 @@ def setup_confluence(use_oauth: bool = False) -> ConfluenceServer:
     # Read the setup
     setup = johnnyfive.utils.read_config_section("confluenceSetup")
 
-    # If we are using OAuth, instantiate a Server client with its bearer token.
+    # Instantiate a Server client with an OAuth or personal bearer token
     if use_oauth:
         session = requests.Session()
         session.headers["Authorization"] = f"Bearer {setup.access_token}"
